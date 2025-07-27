@@ -43,7 +43,7 @@ We take security seriously. If you discover a security vulnerability, please fol
 
 Instead, please report security issues by:
 
-1. **Email**: Send details to `security@[your-domain].com`
+1. **Email**: Send details to 'kentaylorappdev@gmail.com'
 2. **Subject Line**: Include "SECURITY" in the subject line
 3. **Include**:
    - Description of the vulnerability
