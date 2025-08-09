@@ -16,6 +16,9 @@ import (
 
 func main() {
 	app := pocketbase.New()
+	
+	// Set the server to listen on port 8091
+	app.RootCmd.SetArgs([]string{"serve", "--http", "127.0.0.1:8091"})
 
 	// Initialize services
 	encryptionService := services.NewEncryptionService()
