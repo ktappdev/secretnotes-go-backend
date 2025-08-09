@@ -254,7 +254,7 @@ const uploadedImage = await response.json();
 ```javascript
 import PocketBase from 'pocketbase';
 
-const pb = new PocketBase('http://localhost:8090');
+const pb = new PocketBase('http://localhost:8091');
 
 // Generate a secure passphrase (32+ characters) and hash it
 const passphrase = generateSecurePassphrase();
