@@ -35,7 +35,7 @@ The Secret Notes backend does not use traditional authentication. Instead, all o
 
 ### Passphrase Requirements
 
-- Minimum length: 32 characters
+- Minimum length: 3 characters
 - Should be randomly generated for security
 - Never stored on the client
 - Sent only in URL paths (over HTTPS in production)
@@ -65,7 +65,7 @@ All endpoints are prefixed with `/api/secretnotes/`.
 **Description**: Creates a new note with the specified content.
 
 **Path Parameters**:
-- `phrase`: The passphrase for the note (minimum 32 characters)
+- `phrase`: The passphrase for the note (minimum 3 characters)
 
 **Request Body**:
 ```json
@@ -93,7 +93,7 @@ All endpoints are prefixed with `/api/secretnotes/`.
 **Description**: Retrieves an existing note or creates a new one if it doesn't exist.
 
 **Path Parameters**:
-- `phrase`: The passphrase for the note (minimum 32 characters)
+- `phrase`: The passphrase for the note (minimum 3 characters)
 
 **Response**:
 ```json
@@ -113,7 +113,7 @@ All endpoints are prefixed with `/api/secretnotes/`.
 **Description**: Update an existing note with new content.
 
 **Path Parameters**:
-- `phrase`: The passphrase for the note (minimum 32 characters)
+- `phrase`: The passphrase for the note (minimum 3 characters)
 
 **Request Body**:
 ```json
@@ -140,7 +140,7 @@ All endpoints are prefixed with `/api/secretnotes/`.
 **Description**: Upload an image associated with a note.
 
 **Path Parameters**:
-- `phrase`: The passphrase for the note (minimum 32 characters)
+- `phrase`: The passphrase for the note (minimum 3 characters)
 
 **Request Body**: Multipart form data with the image file.
 
@@ -164,7 +164,7 @@ All endpoints are prefixed with `/api/secretnotes/`.
 **Description**: Retrieve an image associated with a note.
 
 **Path Parameters**:
-- `phrase`: The passphrase for the note (minimum 32 characters)
+- `phrase`: The passphrase for the note (minimum 3 characters)
 
 **Response**: The decrypted image file (binary data)
 
@@ -177,7 +177,7 @@ All endpoints are prefixed with `/api/secretnotes/`.
 **Description**: Delete an image associated with a note.
 
 **Path Parameters**:
-- `phrase`: The passphrase for the note (minimum 32 characters)
+- `phrase`: The passphrase for the note (minimum 3 characters)
 
 **Response**:
 ```json
@@ -209,7 +209,7 @@ Error responses follow this format:
 #### Creating/Retrieving a Note
 
 ```javascript
-// Generate a secure passphrase (32+ characters)
+// Generate a passphrase (3+ characters; longer is better)
 const passphrase = generateSecurePassphrase();
 
 // Retrieve or create a note
@@ -256,7 +256,7 @@ import PocketBase from 'pocketbase';
 
 const pb = new PocketBase('http://localhost:8091');
 
-// Generate a secure passphrase (32+ characters) and hash it
+// Generate a passphrase (3+ characters; longer is better) and hash it
 const passphrase = generateSecurePassphrase();
 const phraseHash = await sha256(passphrase);
 ```

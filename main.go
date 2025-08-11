@@ -40,70 +40,70 @@ func main() {
 		})
 
 		// Get note by phrase
-		api.GET("/notes/{phrase}", func(e *core.RequestEvent) error {
-			phrase := e.Request.PathValue("phrase")
-			if len(phrase) < 32 {
-				return e.JSON(http.StatusBadRequest, map[string]string{
-					"error": "Passphrase must be at least 32 characters long",
-				})
-			}
-			return handleGetOrCreateNote(e, phrase)
-		})
+        api.GET("/notes/{phrase}", func(e *core.RequestEvent) error {
+            phrase := e.Request.PathValue("phrase")
+            if len(phrase) < 3 {
+                return e.JSON(http.StatusBadRequest, map[string]string{
+                    "error": "Passphrase must be at least 3 characters long",
+                })
+            }
+            return handleGetOrCreateNote(e, phrase)
+        })
 		
 		// Create note by phrase (explicit POST endpoint)
-		api.POST("/notes/{phrase}", func(e *core.RequestEvent) error {
-			phrase := e.Request.PathValue("phrase")
-			if len(phrase) < 32 {
-				return e.JSON(http.StatusBadRequest, map[string]string{
-					"error": "Passphrase must be at least 32 characters long",
-				})
-			}
-			return handleGetOrCreateNote(e, phrase)
-		})
+        api.POST("/notes/{phrase}", func(e *core.RequestEvent) error {
+            phrase := e.Request.PathValue("phrase")
+            if len(phrase) < 3 {
+                return e.JSON(http.StatusBadRequest, map[string]string{
+                    "error": "Passphrase must be at least 3 characters long",
+                })
+            }
+            return handleGetOrCreateNote(e, phrase)
+        })
 
 		// Update note by phrase
-		api.PATCH("/notes/{phrase}", func(e *core.RequestEvent) error {
-			phrase := e.Request.PathValue("phrase")
-			if len(phrase) < 32 {
-				return e.JSON(http.StatusBadRequest, map[string]string{
-					"error": "Passphrase must be at least 32 characters long",
-				})
-			}
-			return handleUpdateNote(e, phrase)
-		})
+        api.PATCH("/notes/{phrase}", func(e *core.RequestEvent) error {
+            phrase := e.Request.PathValue("phrase")
+            if len(phrase) < 3 {
+                return e.JSON(http.StatusBadRequest, map[string]string{
+                    "error": "Passphrase must be at least 3 characters long",
+                })
+            }
+            return handleUpdateNote(e, phrase)
+        })
 
 		// Upload image for note
-		api.POST("/notes/{phrase}/image", func(e *core.RequestEvent) error {
-			phrase := e.Request.PathValue("phrase")
-			if len(phrase) < 32 {
-				return e.JSON(http.StatusBadRequest, map[string]string{
-					"error": "Passphrase must be at least 32 characters long",
-				})
-			}
-			return handleUploadImage(e, phrase)
-		})
+        api.POST("/notes/{phrase}/image", func(e *core.RequestEvent) error {
+            phrase := e.Request.PathValue("phrase")
+            if len(phrase) < 3 {
+                return e.JSON(http.StatusBadRequest, map[string]string{
+                    "error": "Passphrase must be at least 3 characters long",
+                })
+            }
+            return handleUploadImage(e, phrase)
+        })
 
 		// Get image for note
-		api.GET("/notes/{phrase}/image", func(e *core.RequestEvent) error {
-			phrase := e.Request.PathValue("phrase")
-			if len(phrase) < 32 {
-				return e.JSON(http.StatusBadRequest, map[string]string{
-					"error": "Passphrase must be at least 32 characters long",
-				})
-			}
-			return handleGetImage(e, phrase)
-		})
+        api.GET("/notes/{phrase}/image", func(e *core.RequestEvent) error {
+            phrase := e.Request.PathValue("phrase")
+            if len(phrase) < 3 {
+                return e.JSON(http.StatusBadRequest, map[string]string{
+                    "error": "Passphrase must be at least 3 characters long",
+                })
+            }
+            return handleGetImage(e, phrase)
+        })
 
 		// Delete image for note
-		api.DELETE("/notes/{phrase}/image", func(e *core.RequestEvent) error {
-			phrase := e.Request.PathValue("phrase")
-			if len(phrase) < 32 {
-				return e.JSON(http.StatusBadRequest, map[string]string{
-					"error": "Passphrase must be at least 32 characters long",
-				})
-			}
-			return handleDeleteImage(e, phrase)
-		})
+        api.DELETE("/notes/{phrase}/image", func(e *core.RequestEvent) error {
+            phrase := e.Request.PathValue("phrase")
+            if len(phrase) < 3 {
+                return e.JSON(http.StatusBadRequest, map[string]string{
+                    "error": "Passphrase must be at least 3 characters long",
+                })
+            }
+            return handleDeleteImage(e, phrase)
+        })
 
 		return se.Next()
 	})

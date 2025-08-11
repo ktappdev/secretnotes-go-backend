@@ -97,7 +97,7 @@ All custom endpoints are prefixed with `/api/secretnotes/`.
 - **Endpoint**: `GET /api/secretnotes/notes/{phrase}`
 - **Description**: Retrieves an existing note or creates a new one if it doesn't exist.
 - **Path Parameters**:
-  - `phrase`: The passphrase used for encryption (minimum 32 characters).
+  - `phrase`: The passphrase used for encryption (minimum 3 characters).
 - **Response**: 
   ```json
   {
@@ -114,7 +114,7 @@ All custom endpoints are prefixed with `/api/secretnotes/`.
 - **Endpoint**: `POST /api/secretnotes/notes/{phrase}`
 - **Description**: Creates a new note with the specified content.
 - **Path Parameters**:
-  - `phrase`: The passphrase used for encryption (minimum 32 characters).
+  - `phrase`: The passphrase used for encryption (minimum 3 characters).
 - **Request Body**:
   ```json
   {
@@ -138,7 +138,7 @@ All custom endpoints are prefixed with `/api/secretnotes/`.
 - **Endpoint**: `PATCH /api/secretnotes/notes/{phrase}`
 - **Description**: Updates an existing note with new content.
 - **Path Parameters**:
-  - `phrase`: The passphrase used for encryption (minimum 32 characters).
+  - `phrase`: The passphrase used for encryption (minimum 3 characters).
 - **Request Body**:
   ```json
   {
@@ -161,7 +161,7 @@ All custom endpoints are prefixed with `/api/secretnotes/`.
 - **Endpoint**: `POST /api/secretnotes/notes/{phrase}/image`
 - **Description**: Uploads and encrypts an image associated with a note.
 - **Path Parameters**:
-  - `phrase`: The passphrase used for encryption (minimum 32 characters).
+  - `phrase`: The passphrase used for encryption (minimum 3 characters).
 - **Request Body**: Multipart form data with the image file.
 - **Form Fields**:
   - `image`: The image file to upload
@@ -180,7 +180,7 @@ All custom endpoints are prefixed with `/api/secretnotes/`.
 - **Endpoint**: `GET /api/secretnotes/notes/{phrase}/image`
 - **Description**: Retrieves and decrypts an image associated with a note.
 - **Path Parameters**:
-  - `phrase`: The passphrase used for encryption (minimum 32 characters).
+  - `phrase`: The passphrase used for encryption (minimum 3 characters).
 - **Response**: The decrypted image file (binary data)
 - **Headers**:
   - `Content-Type`: The original content type of the image
@@ -191,7 +191,7 @@ All custom endpoints are prefixed with `/api/secretnotes/`.
 - **Endpoint**: `DELETE /api/secretnotes/notes/{phrase}/image`
 - **Description**: Deletes an image associated with a note.
 - **Path Parameters**:
-  - `phrase`: The passphrase used for encryption (minimum 32 characters).
+  - `phrase`: The passphrase used for encryption (minimum 3 characters).
 - **Response**: 
   ```json
   {

@@ -55,7 +55,7 @@ Here's why:
 
 ### **⚠️ Your Responsibilities**
 
-- **Use a strong passphrase** (32+ characters, unique, random)
+- **Use a strong passphrase** (prefer long and random; minimum 3 characters enforced by API)
 - **Never share your passphrase** with anyone
 - **Use HTTPS** in production (to protect passphrase in transit)
 - **Keep backups** if you want to preserve data
@@ -102,7 +102,7 @@ Here's why:
 
 ### Authentication
 
-No traditional authentication required. All operations use a passphrase (minimum 32 characters) that serves as both identifier and encryption key.
+No traditional authentication required. All operations use a passphrase (minimum 3 characters) that serves as both identifier and encryption key.
 
 ### Core Endpoints
 
@@ -210,7 +210,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## ⚠️ Security Considerations
 
-- **Passphrase Strength**: Use strong, unique passphrases (32+ characters)
+- **Passphrase Strength**: Use strong, unique passphrases (longer is better)
 - **HTTPS Only**: Never use over unencrypted connections in production
 - **Regular Updates**: Keep dependencies updated
 - **Backup Security**: Encrypt backups and store securely

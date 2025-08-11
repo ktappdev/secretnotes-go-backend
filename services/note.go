@@ -10,7 +10,7 @@ import (
 // Note represents a secret note
 type Note struct {
 	ID        string    `json:"id"`
-	Phrase    string    `json:"phrase"`    // Encrypted identifier (32+ chars)
+    Phrase    string    `json:"phrase"`    // Encrypted identifier
 	Message   string    `json:"message"`   // Encrypted note content
 	ImageHash string    `json:"image_hash"` // Hash for encrypted image lookup
 	Created   time.Time `json:"created"`
@@ -34,8 +34,8 @@ func NewNoteService(app *pocketbase.PocketBase, encryption *Service) *NoteServic
 // GetOrCreateNote retrieves an existing note or creates a new one
 func (n *NoteService) GetOrCreateNote(phrase string) (*Note, error) {
 	// Validate phrase length
-	if len(phrase) < 32 {
-		return nil, fmt.Errorf("phrase must be at least 32 characters long")
+    if len(phrase) < 3 {
+        return nil, fmt.Errorf("phrase must be at least 3 characters long")
 	}
 
 	// TODO: Check if note exists in PocketBase
@@ -67,8 +67,8 @@ func (n *NoteService) GetOrCreateNote(phrase string) (*Note, error) {
 // UpdateNote updates an existing note
 func (n *NoteService) UpdateNote(phrase, message string) (*Note, error) {
 	// Validate phrase length
-	if len(phrase) < 32 {
-		return nil, fmt.Errorf("phrase must be at least 32 characters long")
+    if len(phrase) < 3 {
+        return nil, fmt.Errorf("phrase must be at least 3 characters long")
 	}
 
 	// Encrypt the message
@@ -98,8 +98,8 @@ func (n *NoteService) UpdateNote(phrase, message string) (*Note, error) {
 // DeleteNote deletes a note
 func (n *NoteService) DeleteNote(phrase string) error {
 	// Validate phrase length
-	if len(phrase) < 32 {
-		return fmt.Errorf("phrase must be at least 32 characters long")
+    if len(phrase) < 3 {
+        return fmt.Errorf("phrase must be at least 3 characters long")
 	}
 
 	// TODO: Delete note from PocketBase
