@@ -72,6 +72,17 @@ func main() {
             return handleUpdateNote(e, phrase)
         })
 
+		// Upsert note by phrase (create if missing, update if exists)
+		api.PUT("/notes/{phrase}", func(e *core.RequestEvent) error {
+			phrase := e.Request.PathValue("phrase")
+			if len(phrase) < 3 {
+				return e.JSON(http.StatusBadRequest, map[string]string{
+					"error": "Passphrase must be at least 3 characters long",
+				})
+			}
+			return handleUpsertNote(e, phrase)
+		})
+
 		// Upload image for note
         api.POST("/notes/{phrase}/image", func(e *core.RequestEvent) error {
             phrase := e.Request.PathValue("phrase")
@@ -156,7 +167,7 @@ func handleGetOrCreateNote(e *core.RequestEvent, phrase string) error {
 		
 		if encryptedMessage != "" {
 			// Try to decrypt the message
-			log.Printf("Attempting to decrypt message with phrase: %s (hash: %s)", phrase[:5]+"...", phraseHash[:10]+"...")
+            log.Printf("Attempting to decrypt message with phrase: %s (hash: %s)", previewString(phrase, 5), previewString(phraseHash, 10))
 			decryptedBytes, err := encryptionService.DecryptData([]byte(encryptedMessage), phrase)
 			if err != nil {
 				// If decryption fails, assume it's a plaintext message from direct API
@@ -239,15 +250,16 @@ func handleUpdateNote(e *core.RequestEvent, phrase string) error {
 	// Hash the phrase for secure lookup
 	phraseHash := hashPhrase(phrase)
 	
-	// Find the note
-	records, err := app.FindRecordsByFilter("notes", "phrase_hash = {:phrase_hash}", "", 1, 0, dbx.Params{"phrase_hash": phraseHash})
-	if err != nil || len(records) == 0 {
-		return e.JSON(http.StatusNotFound, map[string]string{
-			"error": "Note not found",
-		})
-	}
-	
-	record := records[0]
+    // Find the note
+    records, err := app.FindRecordsByFilter("notes", "phrase_hash = {:phrase_hash}", "", 1, 0, dbx.Params{"phrase_hash": phraseHash})
+    if err != nil || len(records) == 0 {
+        // For PATCH, keep current behavior: return 404 to avoid breaking clients
+        return e.JSON(http.StatusNotFound, map[string]string{
+            "error": "Note not found",
+        })
+    }
+
+    record := records[0]
 	
 	// Encrypt the message
 	encryptedMessage, err := encryptionService.EncryptData([]byte(data.Message), phrase)
@@ -612,4 +624,87 @@ func hashPhrase(phrase string) string {
 func hashBytes(data []byte) string {
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:])
+}
+
+// previewString returns a safe preview of the input limited to max characters.
+// If the input is shorter than max, the full string is returned. Otherwise, it appends an ellipsis.
+func previewString(s string, max int) string {
+    if max <= 0 {
+        return ""
+    }
+    if len(s) <= max {
+        return s
+    }
+    return s[:max] + "..."
+}
+
+// handleUpsertNote creates or updates a note in a single call.
+// If a record for the phrase exists, it updates the message; otherwise it creates a new note with the message.
+func handleUpsertNote(e *core.RequestEvent, phrase string) error {
+    // Read request body
+    data := struct {
+        Message string `json:"message"`
+    }{}
+
+    if err := e.BindBody(&data); err != nil {
+        return e.JSON(http.StatusBadRequest, map[string]string{
+            "error": "Invalid request body",
+        })
+    }
+
+    app := e.App
+    encryptionService := services.NewEncryptionService()
+
+    phraseHash := hashPhrase(phrase)
+
+    // Try find existing
+    records, err := app.FindRecordsByFilter("notes", "phrase_hash = {:phrase_hash}", "", 1, 0, dbx.Params{"phrase_hash": phraseHash})
+    if err != nil {
+        return e.JSON(http.StatusInternalServerError, map[string]string{
+            "error": "Failed to query notes: " + err.Error(),
+        })
+    }
+
+    var record *core.Record
+    if len(records) > 0 {
+        record = records[0]
+    } else {
+        // Create new record
+        collection, err := app.FindCollectionByNameOrId("notes")
+        if err != nil {
+            return e.JSON(http.StatusInternalServerError, map[string]string{
+                "error": "Notes collection not found: " + err.Error(),
+            })
+        }
+        record = core.NewRecord(collection)
+        record.Set("phrase_hash", phraseHash)
+    }
+
+    // Encrypt and set message (allow empty string)
+    encryptedMessage, err := encryptionService.EncryptData([]byte(data.Message), phrase)
+    if err != nil {
+        return e.JSON(http.StatusInternalServerError, map[string]string{
+            "error": "Failed to encrypt message",
+        })
+    }
+    record.Set("message", string(encryptedMessage))
+
+    if err := app.Save(record); err != nil {
+        return e.JSON(http.StatusInternalServerError, map[string]string{
+            "error": "Failed to save note",
+        })
+    }
+
+    status := http.StatusOK
+    if len(records) == 0 {
+        status = http.StatusCreated
+    }
+
+    return e.JSON(status, map[string]any{
+        "id": record.Id,
+        "message": data.Message,
+        "hasImage": record.GetString("image_hash") != "",
+        "created": record.GetDateTime("created"),
+        "updated": record.GetDateTime("updated"),
+    })
 }

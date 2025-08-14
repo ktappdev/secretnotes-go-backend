@@ -53,3 +53,6 @@ temp/
 # Test files
 test_file.txt
 downloaded_file.txt
+
+# Crush directory
+.crush/
