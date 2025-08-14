@@ -1,7 +1,7 @@
 module.exports = {
     apps: [
       {
-        name: 'secure-citizen-backend',
+        name: 'secretnotes',
         script: "git pull && go build && ./secretnotes serve",
       },
     ],
