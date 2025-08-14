@@ -2,36 +2,26 @@
 
 ## Overview
 
-This document provides guidance for frontend developers on how to integrate with the Secret Notes Go backend. The backend offers two approaches for integration:
-
-1. **Direct PocketBase API** - Using PocketBase's JavaScript SDK to interact directly with the collections
-2. **Custom API Endpoints** - Using our custom endpoints that handle encryption/decryption
+This document provides guidance for frontend developers on how to integrate with the Secret Notes Go backend API for a React Native application. The backend uses custom API endpoints that handle encryption/decryption server-side.
 
 ## Base URL
 
-All API endpoints are relative to the base URL where the backend is deployed. For local development, this is typically `http://localhost:8090`.
+**Production**: `https://secret-note-backend.lugetech.com`
+**Local Development**: `http://localhost:8091`
 
-- Custom API endpoints are prefixed with `/api/secretnotes/`
-- Direct PocketBase API endpoints are prefixed with `/api/collections/`
+All custom API endpoints are prefixed with `/api/secretnotes/`
 
 ## Authentication
 
-The Secret Notes backend does not use traditional authentication. Instead, all operations are protected by a passphrase that must be provided as part of the URL path or hashed for direct API access. This passphrase is used for both identification and encryption/decryption.
+The Secret Notes backend does not use traditional authentication. Instead, all operations are protected by a passphrase that must be provided as part of the URL path. This passphrase is used for both identification and encryption/decryption.
 
-### API Approach Recommendation
-
-**We recommend using the Custom API Endpoints (Option 1)** for the following reasons:
+### Key Features
 
 1. **Server-side encryption/decryption**: No need to implement encryption logic in the frontend
 2. **Unified encryption**: Both notes and files use the same passphrase-based encryption
 3. **Secure file handling**: Files are encrypted at rest and decrypted on-demand
 4. **Simplified integration**: Just send passphrases and receive decrypted content
-5. **Verified implementation**: The custom endpoints have been thoroughly tested and verified
-
-**Direct PocketBase API (Option 2)** is also available but requires:
-- Client-side encryption/decryption implementation
-- More complex file handling
-- Manual encryption key management
+5. **Auto-creation**: Notes are automatically created when accessed if they don't exist
 
 ### Passphrase Requirements
 
@@ -58,59 +48,45 @@ All endpoints are prefixed with `/api/secretnotes/`.
 }
 ```
 
-### Create Note
-
-**Endpoint**: `POST /api/secretnotes/notes/{phrase}`
-
-**Description**: Creates a new note with the specified content.
-
-**Path Parameters**:
-- `phrase`: The passphrase for the note (minimum 3 characters)
-
-**Request Body**:
-```json
-{
-  "title": "Note Title",
-  "message": "Note content to encrypt"
-}
-```
-
-**Response**:
-```json
-{
-  "id": "record_id",
-  "message": "decrypted_note_content",
-  "hasImage": false,
-  "created": "",
-  "updated": ""
-}
-```
-
-### Get Note
+### Get or Create Note
 
 **Endpoint**: `GET /api/secretnotes/notes/{phrase}`
 
-**Description**: Retrieves an existing note or creates a new one if it doesn't exist.
+**Description**: Retrieves an existing note or automatically creates a new one with a welcome message if it doesn't exist.
 
 **Path Parameters**:
 - `phrase`: The passphrase for the note (minimum 3 characters)
 
 **Response**:
+- **200 OK** if note exists
+- **201 Created** if new note was created
+
 ```json
 {
   "id": "record_id",
   "message": "decrypted_note_content",
   "hasImage": false,
-  "created": "",
-  "updated": ""
+  "created": "2023-01-01T00:00:00Z",
+  "updated": "2023-01-01T00:00:00Z"
 }
 ```
+
+### Create Note (Explicit)
+
+**Endpoint**: `POST /api/secretnotes/notes/{phrase}`
+
+**Description**: Same behavior as GET - retrieves existing note or creates new one. Provided for semantic clarity.
+
+**Path Parameters**:
+- `phrase`: The passphrase for the note (minimum 3 characters)
+
+**Response**: Same as GET endpoint
 
 ### Update Note
 
 **Endpoint**: `PATCH /api/secretnotes/notes/{phrase}`
 
-**Description**: Update an existing note with new content.
+**Description**: Updates an existing note's content. Returns 404 if note doesn't exist.
 
 **Path Parameters**:
 - `phrase`: The passphrase for the note (minimum 3 characters)
@@ -118,16 +94,49 @@ All endpoints are prefixed with `/api/secretnotes/`.
 **Request Body**:
 ```json
 {
-  "message": "new_note_content"
+  "message": "Updated note content"
 }
 ```
 
 **Response**:
+- **200 OK** on successful update
+- **404 Not Found** if note doesn't exist
+
 ```json
 {
-  "id": "note_id",
-  "message": "decrypted_note_content",
-  "hasImage": true,
+  "id": "record_id",
+  "message": "Updated note content",
+  "hasImage": false,
+  "created": "2023-01-01T00:00:00Z",
+  "updated": "2023-01-01T00:00:01Z"
+}
+```
+
+### Upsert Note (Recommended)
+
+**Endpoint**: `PUT /api/secretnotes/notes/{phrase}`
+
+**Description**: Creates a new note or updates existing one in a single call. This is the recommended endpoint for most use cases.
+
+**Path Parameters**:
+- `phrase`: The passphrase for the note (minimum 3 characters)
+
+**Request Body**:
+```json
+{
+  "message": "Note content to save"
+}
+```
+
+**Response**:
+- **200 OK** if existing note was updated
+- **201 Created** if new note was created
+
+```json
+{
+  "id": "record_id",
+  "message": "Note content to save",
+  "hasImage": false,
   "created": "2023-01-01T00:00:00Z",
   "updated": "2023-01-01T00:00:00Z"
 }
@@ -204,68 +213,256 @@ Error responses follow this format:
 
 ## Implementation Examples
 
-### Option 1: Using Custom API Endpoints (with Encryption/Decryption)
+### React Native Implementation
 
-#### Creating/Retrieving a Note
+#### Creating/Updating a Note (Recommended Approach)
 
 ```javascript
-// Generate a passphrase (3+ characters; longer is better)
-const passphrase = generateSecurePassphrase();
+// Using the PUT endpoint for upsert functionality
+const saveNote = async (passphrase, message) => {
+  try {
+    const response = await fetch(`${BASE_URL}/api/secretnotes/notes/${encodeURIComponent(passphrase)}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ message }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Error saving note:', error);
+    throw error;
+  }
+};
 
-// Retrieve or create a note
-const response = await fetch(`/api/secretnotes/notes/${passphrase}`);
-const note = await response.json();
+// Usage
+const passphrase = 'my-secure-passphrase-123';
+const noteContent = 'This is my secret note content';
+const savedNote = await saveNote(passphrase, noteContent);
 ```
 
-#### Updating a Note
+#### Retrieving a Note
 
 ```javascript
-const response = await fetch(`/api/secretnotes/notes/${passphrase}`, {
-  method: 'PATCH',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({
-    message: 'New secret message',
-  }),
-});
+const getNote = async (passphrase) => {
+  try {
+    const response = await fetch(`${BASE_URL}/api/secretnotes/notes/${encodeURIComponent(passphrase)}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const note = await response.json();
+    return note;
+  } catch (error) {
+    console.error('Error retrieving note:', error);
+    throw error;
+  }
+};
 
-const updatedNote = await response.json();
+// Usage
+const passphrase = 'my-secure-passphrase-123';
+const note = await getNote(passphrase);
+console.log('Note content:', note.message);
+console.log('Has image:', note.hasImage);
 ```
 
-#### Uploading an Image
+#### Updating an Existing Note (PATCH)
 
 ```javascript
-const formData = new FormData();
-formData.append('image', imageFile);
-
-const response = await fetch(`/api/secretnotes/notes/${passphrase}/image`, {
-  method: 'POST',
-  body: formData,
-});
-
-const uploadedImage = await response.json();
+// Only use PATCH if you specifically need to update an existing note
+// and want a 404 error if the note doesn't exist
+const updateExistingNote = async (passphrase, message) => {
+  try {
+    const response = await fetch(`${BASE_URL}/api/secretnotes/notes/${encodeURIComponent(passphrase)}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ message }),
+    });
+    
+    if (response.status === 404) {
+      throw new Error('Note not found');
+    }
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const updatedNote = await response.json();
+    return updatedNote;
+  } catch (error) {
+    console.error('Error updating note:', error);
+    throw error;
+  }
+};
 ```
 
-### Option 2: Using Direct PocketBase API (with PocketBase SDK)
-
-#### Setup
+#### Working with Images
 
 ```javascript
-import PocketBase from 'pocketbase';
+// Upload an image
+const uploadImage = async (passphrase, imageFile) => {
+  try {
+    const formData = new FormData();
+    formData.append('image', imageFile);
+    
+    const response = await fetch(`${BASE_URL}/api/secretnotes/notes/${encodeURIComponent(passphrase)}/image`, {
+      method: 'POST',
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    throw error;
+  }
+};
 
-const pb = new PocketBase('http://localhost:8091');
+// Retrieve an image
+const getImage = async (passphrase) => {
+  try {
+    const response = await fetch(`${BASE_URL}/api/secretnotes/notes/${encodeURIComponent(passphrase)}/image`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    // Returns the image as a blob
+    const imageBlob = await response.blob();
+    return imageBlob;
+  } catch (error) {
+    console.error('Error retrieving image:', error);
+    throw error;
+  }
+};
 
-// Generate a passphrase (3+ characters; longer is better) and hash it
-const passphrase = generateSecurePassphrase();
-const phraseHash = await sha256(passphrase);
+// Delete an image
+const deleteImage = async (passphrase) => {
+  try {
+    const response = await fetch(`${BASE_URL}/api/secretnotes/notes/${encodeURIComponent(passphrase)}/image`, {
+      method: 'DELETE',
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Error deleting image:', error);
+    throw error;
+  }
+};
 ```
 
-#### Creating a Note
+### Complete React Native Example
 
 ```javascript
-// Create a new note with encrypted message
-const encryptedMessage = await encryptWithPassphrase(message, passphrase);
+import React, { useState, useEffect } from 'react';
+import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
+
+const BASE_URL = 'https://secret-note-backend.lugetech.com';
+
+const SecretNoteApp = () => {
+  const [passphrase, setPassphrase] = useState('');
+  const [noteContent, setNoteContent] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  
+  const saveNote = async () => {
+    if (passphrase.length < 3) {
+      Alert.alert('Error', 'Passphrase must be at least 3 characters long');
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${BASE_URL}/api/secretnotes/notes/${encodeURIComponent(passphrase)}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ message: noteContent }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const result = await response.json();
+      Alert.alert('Success', 'Note saved successfully!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save note: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const loadNote = async () => {
+    if (passphrase.length < 3) {
+      Alert.alert('Error', 'Passphrase must be at least 3 characters long');
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${BASE_URL}/api/secretnotes/notes/${encodeURIComponent(passphrase)}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const note = await response.json();
+      setNoteContent(note.message);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to load note: ' + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  return (
+    <View style={{ padding: 20 }}>
+      <Text>Secret Notes</Text>
+      <TextInput
+        placeholder="Enter passphrase (min 3 chars)"
+        value={passphrase}
+        onChangeText={setPassphrase}
+        secureTextEntry
+        style={{ borderWidth: 1, padding: 10, marginVertical: 10 }}
+      />
+      <TextInput
+        placeholder="Enter note content"
+        value={noteContent}
+        onChangeText={setNoteContent}
+        multiline
+        style={{ borderWidth: 1, padding: 10, height: 100, marginVertical: 10 }}
+      />
+      <TouchableOpacity onPress={loadNote} disabled={isLoading}>
+        <Text>Load Note</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={saveNote} disabled={isLoading}>
+        <Text>Save Note</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+export default SecretNoteApp;
+```
 
 const record = await pb.collection('notes').create({
   phrase_hash: phraseHash,
@@ -357,23 +554,36 @@ const result = await response.json();
 
 ## Security Considerations
 
-1. **Passphrase Handling**: Never store passphrases in localStorage, sessionStorage, or cookies.
-2. **URL Exposure**: Be aware that passphrases will be visible in browser history and server logs.
-3. **HTTPS**: Always use HTTPS in production to protect passphrase transmission.
-4. **CORS**: The backend should be configured with appropriate CORS headers.
-5. **Rate Limiting**: Implement client-side rate limiting to avoid overwhelming the server.
+1. **HTTPS Only**: Always use HTTPS in production to protect passphrases in transit.
+2. **Passphrase Storage**: Never store passphrases in local storage or any persistent storage.
+3. **Memory Management**: Clear passphrase variables from memory when no longer needed.
+4. **Input Validation**: Always validate passphrase length (minimum 3 characters) on the client side.
+5. **URL Encoding**: Always use `encodeURIComponent()` when including passphrases in URLs.
+6. **Error Handling**: Implement proper error handling for all API calls.
+7. **Rate Limiting**: Implement client-side rate limiting to avoid overwhelming the server.
 
 ## Best Practices
 
-1. **Passphrase Generation**: Use a cryptographically secure random generator for passphrases.
-2. **User Experience**: Provide clear instructions on passphrase management to users.
-3. **Error Handling**: Implement graceful error handling for network issues and API errors.
-4. **Loading States**: Show loading indicators during API requests.
-5. **Validation**: Validate passphrase length on the client before making requests.
+1. **Use PUT for Most Operations**: The `PUT /api/secretnotes/notes/{phrase}` endpoint is recommended for most use cases as it handles both creation and updates.
+2. **Passphrase Generation**: Use a cryptographically secure random generator for passphrases.
+3. **Error Handling**: Always implement proper try-catch blocks and user-friendly error messages.
+4. **Loading States**: Show loading indicators during API calls for better UX.
+5. **Input Validation**: Validate passphrase length and content before making API calls.
+6. **Accessibility**: Implement full accessibility support for all UI components.
+7. **Offline Handling**: Consider implementing offline detection and appropriate user feedback.
 
-## Future Enhancements
+## API Endpoint Summary
 
-1. **WebSockets**: Real-time updates for note changes.
-2. **Caching**: Client-side caching of recently accessed notes.
-3. **Progressive Web App**: Offline support for viewing existing notes.
-4. **Accessibility**: Full accessibility support for all UI components.
+| Method | Endpoint | Description | Use Case |
+|--------|----------|-------------|----------|
+| `GET` | `/api/secretnotes/notes/{phrase}` | Get existing note or create new one | Initial note access |
+| `POST` | `/api/secretnotes/notes/{phrase}` | Same as GET (semantic clarity) | Alternative to GET |
+| `PUT` | `/api/secretnotes/notes/{phrase}` | Create or update note | **Recommended for most use cases** |
+| `PATCH` | `/api/secretnotes/notes/{phrase}` | Update existing note only | When you need 404 for missing notes |
+| `POST` | `/api/secretnotes/notes/{phrase}/image` | Upload image | Image upload |
+| `GET` | `/api/secretnotes/notes/{phrase}/image` | Retrieve image | Image download |
+| `DELETE` | `/api/secretnotes/notes/{phrase}/image` | Delete image | Image removal |
+
+## Support
+
+For questions or issues with the API, please refer to the backend documentation or contact the development team.
