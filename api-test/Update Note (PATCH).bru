@@ -1,0 +1,35 @@
+meta {
+  name: Update Note (PATCH)
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/api/secretnotes/notes/{{testPhrase}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "message": "This is an updated note content via PATCH"
+  }
+}
+
+tests {
+  test("Status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  
+  test("Response contains updated message", function() {
+    expect(res.getBody()).to.have.property('message');
+    expect(res.getBody().message).to.equal('This is an updated note content via PATCH');
+  });
+  
+  test("Response contains note metadata", function() {
+    expect(res.getBody()).to.have.property('id');
+    expect(res.getBody()).to.have.property('hasImage');
+    expect(res.getBody()).to.have.property('created');
+    expect(res.getBody()).to.have.property('updated');
+  });
+}

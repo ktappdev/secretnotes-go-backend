@@ -1,0 +1,32 @@
+meta {
+  name: Upload Image
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/secretnotes/notes/{{testPhrase}}/image
+  body: multipartForm
+  auth: none
+}
+
+body:multipart-form {
+  image: @file(test-image.jpg)
+}
+
+tests {
+  test("Status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  
+  test("Response contains file metadata", function() {
+    expect(res.getBody()).to.have.property('id');
+    expect(res.getBody()).to.have.property('fileName');
+    expect(res.getBody()).to.have.property('contentType');
+    expect(res.getBody()).to.have.property('created');
+  });
+  
+  test("Content type should be image", function() {
+    expect(res.getBody().contentType).to.match(/^image\//);
+  });
+}

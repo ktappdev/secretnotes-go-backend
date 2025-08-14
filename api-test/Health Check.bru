@@ -1,0 +1,27 @@
+meta {
+  name: Health Check
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/secretnotes/
+  body: none
+  auth: none
+}
+
+tests {
+  test("Status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+  
+  test("Response contains message", function() {
+    expect(res.getBody()).to.have.property('message');
+    expect(res.getBody().message).to.equal('Secret Notes API is live');
+  });
+  
+  test("Response contains version", function() {
+    expect(res.getBody()).to.have.property('version');
+    expect(res.getBody().version).to.equal('1.0.0');
+  });
+}

@@ -1,0 +1,29 @@
+meta {
+  name: Get or Create Note
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/secretnotes/notes/{{testPhrase}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("Status is 200 or 201", function() {
+    expect([200, 201]).to.include(res.getStatus());
+  });
+  
+  test("Response contains note data", function() {
+    expect(res.getBody()).to.have.property('id');
+    expect(res.getBody()).to.have.property('message');
+    expect(res.getBody()).to.have.property('hasImage');
+    expect(res.getBody()).to.have.property('created');
+    expect(res.getBody()).to.have.property('updated');
+  });
+  
+  test("hasImage is boolean", function() {
+    expect(res.getBody().hasImage).to.be.a('boolean');
+  });
+}

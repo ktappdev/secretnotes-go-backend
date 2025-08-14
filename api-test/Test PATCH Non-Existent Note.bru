@@ -1,0 +1,28 @@
+meta {
+  name: Test PATCH Non-Existent Note
+  type: http
+  seq: 10
+}
+
+patch {
+  url: {{baseUrl}}/api/secretnotes/notes/non-existent-note-12345
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "message": "This should fail because note doesn't exist"
+  }
+}
+
+tests {
+  test("Status is 404 for non-existent note", function() {
+    expect(res.getStatus()).to.equal(404);
+  });
+  
+  test("Response contains error message", function() {
+    expect(res.getBody()).to.have.property('error');
+    expect(res.getBody().error).to.equal('Note not found');
+  });
+}

@@ -1,0 +1,35 @@
+meta {
+  name: Upsert Note (PUT)
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{baseUrl}}/api/secretnotes/notes/{{testPhrase}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "message": "This note was created or updated via PUT (upsert)"
+  }
+}
+
+tests {
+  test("Status is 200 or 201", function() {
+    expect([200, 201]).to.include(res.getStatus());
+  });
+  
+  test("Response contains upserted message", function() {
+    expect(res.getBody()).to.have.property('message');
+    expect(res.getBody().message).to.equal('This note was created or updated via PUT (upsert)');
+  });
+  
+  test("Response contains note metadata", function() {
+    expect(res.getBody()).to.have.property('id');
+    expect(res.getBody()).to.have.property('hasImage');
+    expect(res.getBody()).to.have.property('created');
+    expect(res.getBody()).to.have.property('updated');
+  });
+}
