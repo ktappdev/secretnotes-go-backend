@@ -5,9 +5,12 @@ meta {
 }
 
 delete {
-  url: {{baseUrl}}/api/secretnotes/notes/{{testPhrase}}/image
+  url: {{baseUrl}}/api/secretnotes/notes/image
   body: none
   auth: none
+  headers: {
+    X-Passphrase: {{testPhrase}}
+  }
 }
 
 tests {

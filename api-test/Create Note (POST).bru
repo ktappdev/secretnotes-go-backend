@@ -5,9 +5,12 @@ meta {
 }
 
 post {
-  url: {{baseUrl}}/api/secretnotes/notes/{{testPhrase2}}
+  url: {{baseUrl}}/api/secretnotes/notes
   body: none
   auth: none
+  headers: {
+    X-Passphrase: {{testPhrase2}}
+  }
 }
 
 tests {

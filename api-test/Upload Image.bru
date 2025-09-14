@@ -5,13 +5,16 @@ meta {
 }
 
 post {
-  url: {{baseUrl}}/api/secretnotes/notes/{{testPhrase}}/image
+  url: {{baseUrl}}/api/secretnotes/notes/image
   body: multipartForm
   auth: none
+  headers: {
+    X-Passphrase: {{testPhrase}}
+  }
 }
 
 body:multipart-form {
-  image: @file(test-image.jpg)
+  image: @file({{imageFile}})
 }
 
 tests {
@@ -19,14 +22,14 @@ tests {
     expect(res.getStatus()).to.equal(200);
   });
   
-  test("Response contains file metadata", function() {
-    expect(res.getBody()).to.have.property('id');
+  test("Response contains expected fields", function() {
+    expect(res.getBody()).to.have.property('message');
     expect(res.getBody()).to.have.property('fileName');
     expect(res.getBody()).to.have.property('contentType');
-    expect(res.getBody()).to.have.property('created');
+    expect(res.getBody()).to.have.property('fileSize');
   });
   
-  test("Content type should be image", function() {
+  test("Content type should be image/*", function() {
     expect(res.getBody().contentType).to.match(/^image\//);
   });
 }

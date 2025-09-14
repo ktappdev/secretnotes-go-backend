@@ -5,9 +5,12 @@ meta {
 }
 
 put {
-  url: {{baseUrl}}/api/secretnotes/notes/{{testPhrase}}
+  url: {{baseUrl}}/api/secretnotes/notes
   body: json
   auth: none
+  headers: {
+    X-Passphrase: {{testPhrase}}
+  }
 }
 
 body:json {

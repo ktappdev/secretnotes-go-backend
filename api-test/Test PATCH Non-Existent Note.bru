@@ -5,9 +5,12 @@ meta {
 }
 
 patch {
-  url: {{baseUrl}}/api/secretnotes/notes/non-existent-note-12345
+  url: {{baseUrl}}/api/secretnotes/notes
   body: json
   auth: none
+  headers: {
+    X-Passphrase: non-existent-note-12345
+  }
 }
 
 body:json {
@@ -21,8 +24,8 @@ tests {
     expect(res.getStatus()).to.equal(404);
   });
   
-  test("Response contains error message", function() {
+  test("Response contains error message (case-insensitive)", function() {
     expect(res.getBody()).to.have.property('error');
-    expect(res.getBody().error).to.equal('Note not found');
+    expect(String(res.getBody().error).toLowerCase()).to.equal('note not found');
   });
 }

@@ -8,6 +8,9 @@ get {
   url: {{baseUrl}}/api/secretnotes/
   body: none
   auth: none
+  headers: {
+    X-Passphrase: {{testPhrase}}
+  }
 }
 
 tests {
