@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"secretnotes-cli/internal/api"
-	"secretnotes-cli/internal/config"
-	"secretnotes-cli/internal/tui"
+	"github.com/ktappdev/secretnotes-go-backend/cli/internal/api"
+	"github.com/ktappdev/secretnotes-go-backend/cli/internal/config"
+	"github.com/ktappdev/secretnotes-go-backend/cli/internal/tui"
 
 	"golang.org/x/term"
 )

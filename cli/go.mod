@@ -1,4 +1,4 @@
-module secretnotes-cli
+module github.com/ktappdev/secretnotes-go-backend/cli
 
 go 1.22
 

@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"secretnotes-cli/internal/api"
+	"github.com/ktappdev/secretnotes-go-backend/cli/internal/api"
 )
 
 type EditorApp struct {
