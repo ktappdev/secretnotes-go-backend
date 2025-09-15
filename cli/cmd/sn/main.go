@@ -63,9 +63,11 @@ func main() {
 	}
 	if flagAutosave {
 		cfg.Preferences.AutosaveEnabled = true
+		changed = true
 	}
 	if flagAutosaveMs > 0 {
 		cfg.Preferences.AutosaveDebounceMs = flagAutosaveMs
+		changed = true
 	}
 	if changed {
 		if err := config.Save(cfgPath, &cfg); err != nil {
