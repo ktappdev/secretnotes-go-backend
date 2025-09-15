@@ -132,7 +132,7 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "?":
 			a.showAbout = !a.showAbout
 			return a, nil
-		case "ctrl+shift+s":
+		case "ctrl+shift+s", "ctrl+S", "alt+s":
 			// Toggle autosave and persist preference
 			a.autosave = !a.autosave
 			if a.savePref != nil {
@@ -228,7 +228,7 @@ func (a *EditorApp) View() string {
 	}
 	base := border.Render(a.ta.View()) + "\n" + lipgloss.NewStyle().Faint(true).Render(status)
 	// footer hints
-	hints := "?: About • Ctrl+T Plain • Ctrl+Y Copy • Ctrl+P Passphrase • Ctrl+Shift+S Autosave • Ctrl+S Save • Ctrl+Q Quit"
+	hints := "?: About • Ctrl+T Plain • Ctrl+Y Copy • Ctrl+P Passphrase • Alt+S Autosave • Ctrl+S Save • Ctrl+Q Quit"
 	base = base + "\n" + lipgloss.NewStyle().Faint(true).Render(hints)
 	if a.showAbout {
 		// About modal

@@ -11,7 +11,7 @@ Keybindings
 - Ctrl+S: Save the note
 - Ctrl+P: Change passphrase (focuses prompt, Enter to reload)
 - Ctrl+T: Toggle Plain view (shows only your text, no UI chrome)
-- Ctrl+Shift+S: Toggle Autosave (persists to config)
+- Alt+S: Toggle Autosave (persists to config)
 - Ctrl+Y: Copy note content to clipboard
 - Ctrl+Q or Ctrl+C: Quit
 
@@ -50,7 +50,7 @@ Install
     ```
 
 Autosave
-- Toggle in the app: press Ctrl+Shift+S (persisted to config immediately)
+- Toggle in the app: press Alt+S (persisted to config immediately)
 - One-time for this run: ./sn --autosave (optional: --autosave-debounce-ms 1200)
 - Default debounce: 1200 ms (sensible balance between responsiveness and server load)
 - You can also edit preferences.autosaveEnabled and preferences.autosaveDebounceMs in the config
