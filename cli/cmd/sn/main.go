@@ -51,18 +51,26 @@ func main() {
 		}
 	}
 
-	// Apply flag overrides
+	// Apply flag overrides and persist URL/TLS if provided
+	changed := false
 	if flagURL != "" {
 		cfg.OverrideURL(flagURL)
+		changed = true
 	}
 	if flagInsecure {
 		cfg.OverrideVerifyTLS(false)
+		changed = true
 	}
 	if flagAutosave {
 		cfg.Preferences.AutosaveEnabled = true
 	}
 	if flagAutosaveMs > 0 {
 		cfg.Preferences.AutosaveDebounceMs = flagAutosaveMs
+	}
+	if changed {
+		if err := config.Save(cfgPath, &cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to persist config changes: %v\n", err)
+		}
 	}
 
 	server := cfg.CurrentServer()
@@ -76,6 +84,26 @@ func main() {
 	defer cancel()
 	if err := client.Health(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: server health check failed: %v\n", err)
+		// Auto-fallback: if pointing to localhost dev URL, try the remote default
+		if server.URL == "http://127.0.0.1:8091" || server.URL == "http://localhost:8091" {
+			fallback := "https://secret-note-backend.lugetech.com"
+			fmt.Fprintf(os.Stderr, "attempting fallback to %s...\n", fallback)
+			client2 := api.NewClient(fallback, true)
+			ctx2, cancel2 := context.WithTimeout(context.Background(), 4*time.Second)
+			defer cancel2()
+			if err2 := client2.Health(ctx2); err2 == nil {
+				cfg.OverrideURL(fallback)
+				cfg.OverrideVerifyTLS(true)
+				if err := config.Save(cfgPath, &cfg); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to persist fallback config: %v\n", err)
+				}
+				client = client2
+				server = cfg.CurrentServer()
+				fmt.Fprintln(os.Stderr, "switched to remote backend and saved to config")
+			} else {
+				fmt.Fprintf(os.Stderr, "fallback health check failed: %v\n", err2)
+			}
+		}
 	}
 
 	// Prompt for passphrase (never saved)
@@ -137,7 +165,7 @@ func firstRunSetup(cfg *config.Config) error {
 	}
 
 	// URL
-	defaultURL := "http://127.0.0.1:8091"
+	defaultURL := "https://secret-note-backend.lugetech.com"
 	fmt.Printf("Server URL [%s]: ", defaultURL)
 	url, _ := in.ReadString('\n')
 	url = strings.TrimSpace(url)

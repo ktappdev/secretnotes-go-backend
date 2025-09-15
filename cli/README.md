@@ -30,13 +30,13 @@ Build
 
 Run
 - ./sn
-- ./sn --url http://127.0.0.1:8091 --autosave --autosave-debounce-ms 1200
-- ./sn --insecure (for dev HTTPS with self-signed certs)
+- ./sn --url https://secret-note-backend.lugetech.com --autosave --autosave-debounce-ms 1200
+- ./sn --insecure (only if using dev HTTPS with self-signed certs)
 
 First run
 - You’ll be asked:
   - Server name (default: local)
-  - Server URL (default: http://127.0.0.1:8091)
+- Server URL (default: https://secret-note-backend.lugetech.com)
   - TLS verification (only for https)
   - Autosave and debounce settings
 - After setup, you’ll be prompted for your passphrase (masked). The note for that passphrase is loaded.

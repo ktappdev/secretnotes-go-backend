@@ -32,9 +32,9 @@ func Default() Config {
 	return Config{
 		Version: 1,
 		Servers: []Server{
-			{Name: "local", URL: "http://127.0.0.1:8091", VerifyTLS: true},
+			{Name: "remote", URL: "https://secret-note-backend.lugetech.com", VerifyTLS: true},
 		},
-		DefaultServer: "local",
+		DefaultServer: "remote",
 		Preferences: Preferences{
 			AutosaveEnabled:    false,
 			AutosaveDebounceMs: 1200,
