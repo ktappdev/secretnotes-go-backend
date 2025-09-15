@@ -6,7 +6,7 @@ meta {
 
 post {
   url: {{baseUrl}}/api/secretnotes/notes/image
-  body: multipart-form
+  body: multipartForm
   auth: none
 }
 
@@ -15,14 +15,14 @@ headers {
 }
 
 body:multipart-form {
-  image: ./test-image.png
+  image: @file(test-image.png)
 }
 
 tests {
   test("Status is 200", function() {
     expect(res.getStatus()).to.equal(200);
   });
-
+  
   test("Response contains message", function() {
     expect(res.getBody()).to.have.property('message');
   });
