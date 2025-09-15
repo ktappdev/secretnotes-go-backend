@@ -38,12 +38,16 @@ Install
 - Requirements: Go 1.22+
 - Local (from this repo):
   - cd cli && go install ./cmd/sn
-- From GitHub (once the repo is public and the module path is set):
-- Monorepo path (CLI inside backend repo):
-  - go install github.com/ktappdev/secretnotes-go-backend/cli/cmd/sn@latest
-- Dedicated CLI repo (not used here):
-  - go install github.com/<org>/secretnotes-cli/cmd/sn@latest
-- Note: Module path is set to module github.com/ktappdev/secretnotes-go-backend/cli so go install works out of the box.
+- From GitHub:
+  ```bash
+  go install github.com/ktappdev/secretnotes-go-backend/cli/cmd/sn@latest
+  ```
+  - If that fails due to proxy cache, try:
+    ```bash
+    go env -w GOPROXY=direct
+    go install github.com/ktappdev/secretnotes-go-backend/cli/cmd/sn@latest
+    go env -u GOPROXY
+    ```
 
 Autosave
 - Toggle in the app: press Ctrl+Shift+S (persisted to config immediately)
