@@ -2,7 +2,7 @@ module.exports = {
     apps: [
       {
         name: 'secretnotes',
-        script: "git pull && go build && ./secretnotes serve",
+        script: "git pull && go build && ./secretnotes",
       },
     ],
   };
