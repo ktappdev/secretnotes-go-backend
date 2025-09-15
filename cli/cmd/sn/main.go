@@ -193,10 +193,14 @@ func firstRunSetup(cfg *config.Config) error {
 	cfg.DefaultServer = name
 
 	// Preferences
-	fmt.Print("Enable autosave? [y/N]: ")
+	fmt.Print("Enable autosave? [Y/n]: ")
 	ans, _ := in.ReadString('\n')
 	ans = strings.TrimSpace(strings.ToLower(ans))
-	cfg.Preferences.AutosaveEnabled = ans == "y" || ans == "yes"
+	if ans == "" {
+		cfg.Preferences.AutosaveEnabled = true
+	} else {
+		cfg.Preferences.AutosaveEnabled = ans == "y" || ans == "yes"
+	}
 
 	fmt.Print("Autosave debounce ms [1200]: ")
 	debStr, _ := in.ReadString('\n')

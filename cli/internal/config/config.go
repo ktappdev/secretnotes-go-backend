@@ -36,7 +36,7 @@ func Default() Config {
 		},
 		DefaultServer: "remote",
 		Preferences: Preferences{
-			AutosaveEnabled:    false,
+			AutosaveEnabled:    true,
 			AutosaveDebounceMs: 1200,
 			Theme:              "dark",
 		},

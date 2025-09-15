@@ -20,7 +20,7 @@ Features
 - Passphrase prompt at start (never stored); in-app passphrase change (Ctrl+P)
 - Load note via GET /api/secretnotes/notes (creates if missing)
 - Save via PATCH /api/secretnotes/notes with {"message": "..."}
-- Autosave with sensible default debounce (1200ms), toggleable in-app and persisted
+- Autosave ON by default (1200ms debounce), toggleable in-app and persisted
 - Plain view toggle for clean selection/copy (Ctrl+T)
 - One-shot copy to clipboard (Ctrl+Y)
 
@@ -50,9 +50,9 @@ Install
     ```
 
 Autosave
+- Default: ON (1200 ms debounce)
 - Toggle in the app: press Alt+S (persisted to config immediately)
 - One-time for this run: ./sn --autosave (optional: --autosave-debounce-ms 1200)
-- Default debounce: 1200 ms (sensible balance between responsiveness and server load)
 - You can also edit preferences.autosaveEnabled and preferences.autosaveDebounceMs in the config
 
 First run
