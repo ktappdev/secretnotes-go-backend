@@ -13,7 +13,8 @@ Keybindings
 - Ctrl+T: Toggle Plain view (shows only your text, no UI chrome)
 - Alt+S: Toggle Autosave (persists to config)
 - Ctrl+Y: Copy note content to clipboard
-- Ctrl+Q or Ctrl+C: Quit
+- Ctrl+Q: Quit and wipe screen + scrollback (privacy)
+- Ctrl+C: Quit and clear screen only
 
 Features
 - First-run setup storing non-sensitive config in the user config directory
@@ -38,12 +39,14 @@ Install
 - Requirements: Go 1.22+
 - Local (from this repo):
   - cd cli && go install ./cmd/sn
-- From GitHub:
+- From GitHub (always latest from main):
   ```bash
-  go install github.com/ktappdev/secretnotes-go-backend/cli/cmd/sn@latest
+  go install github.com/ktappdev/secretnotes-go-backend/cli/cmd/sn@main
   ```
-  - If that fails due to proxy cache, try:
+  - Alternative (@latest may be cached by proxies):
     ```bash
+    go install github.com/ktappdev/secretnotes-go-backend/cli/cmd/sn@latest
+    # If @latest fails due to proxy cache:
     go env -w GOPROXY=direct
     go install github.com/ktappdev/secretnotes-go-backend/cli/cmd/sn@latest
     go env -u GOPROXY
@@ -80,6 +83,10 @@ Security
 - Passphrase lives only in memory for the session and is zeroed on exit.
 - No passphrases in config or logs.
 - No recovery: If you forget your passphrase, your note is permanently unrecoverable.
+
+Privacy & exit behavior
+- Ctrl+Q: wipes the screen and scrollback to remove any trace of your note
+- Ctrl+C: clears the visible screen but preserves scrollback history
 
 Troubleshooting
 - Status shows Connected/Offline; the backend host is not displayed.

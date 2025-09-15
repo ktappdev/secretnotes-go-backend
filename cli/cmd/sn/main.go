@@ -134,9 +134,16 @@ func main() {
 	ctxRun, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if err := app.Run(ctxRun); err != nil && !errors.Is(err, context.Canceled) {
+if err := app.Run(ctxRun); err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("app error: %v", err)
 	}
+// Clear terminal based on exit mode: Ctrl+Q wipes scrollback; Ctrl+C only clears screen
+switch app.ExitMode() {
+case "wipe":
+	fmt.Print("\033[2J\033[3J\033[H")
+default: // "clear" or unspecified
+	fmt.Print("\033[2J\033[H")
+}
 }
 
 func promptPassphrase() ([]byte, error) {

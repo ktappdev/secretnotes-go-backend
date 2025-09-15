@@ -19,6 +19,9 @@ type EditorApp struct {
 	pass        []byte
 	serverName  string
 
+	// exit semantics
+	exitMode    string // "wipe" clears screen+scrollback; "clear" clears screen only
+
 	// UI state
 	ta          textarea.Model
 	status      string
@@ -78,10 +81,13 @@ func NewEditorApp(client *api.Client, passphrase []byte, serverName string, auto
 
 // Run starts the Bubble Tea program
 func (a *EditorApp) Run(ctx context.Context) error {
-	p := tea.NewProgram(a, tea.WithContext(ctx))
+	p := tea.NewProgram(a, tea.WithContext(ctx), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }
+
+// ExitMode reports how the user exited the app: "wipe" or "clear".
+func (a *EditorApp) ExitMode() string { return a.exitMode }
 
 // Init loads note
 func (a *EditorApp) Init() tea.Cmd {
@@ -162,7 +168,11 @@ case "ctrl+t":
 			_ = clipboard.WriteAll(a.ta.Value())
 			a.status = "Copied note to clipboard"
 			return a, nil
-		case "ctrl+c", "ctrl+q":
+		case "ctrl+q":
+			a.exitMode = "wipe"
+			return a, tea.Quit
+		case "ctrl+c":
+			a.exitMode = "clear"
 			return a, tea.Quit
 		}
 case loadedMsg:
@@ -237,7 +247,8 @@ func (a *EditorApp) View() string {
 		body := "A zero‑knowledge, passphrase‑based, single‑note editor.\n" +
 			"One passphrase → one note, encrypted end‑to‑end.\n" +
 			"No accounts, no tracking — your secret stays yours.\n" +
-			"Text‑first TUI with save, autosave, and quick copy."
+			"Text‑first TUI with save, autosave, and quick copy.\n" +
+			"Privacy: Ctrl+Q wipes screen + history, Ctrl+C clears screen only."
 		warn := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).Render("Important: If you forget your passphrase, your note is permanently unrecoverable.")
 		modalBorder := lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).Padding(1, 2)
 		modal := modalBorder.Render(header+"\n"+sub+"\n\n"+body+"\n\n"+warn+"\n\nPress ? or Esc to close")
