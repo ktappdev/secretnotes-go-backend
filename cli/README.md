@@ -11,6 +11,7 @@ Keybindings
 - Ctrl+S: Save the note
 - Ctrl+P: Change passphrase (focuses prompt, Enter to reload)
 - Ctrl+T: Toggle Plain view (shows only your text, no UI chrome)
+- Ctrl+Shift+S: Toggle Autosave (persists to config)
 - Ctrl+Y: Copy note content to clipboard
 - Ctrl+Q or Ctrl+C: Quit
 
@@ -19,7 +20,7 @@ Features
 - Passphrase prompt at start (never stored); in-app passphrase change (Ctrl+P)
 - Load note via GET /api/secretnotes/notes (creates if missing)
 - Save via PATCH /api/secretnotes/notes with {"message": "..."}
-- Optional debounced autosave
+- Autosave with sensible default debounce (1200ms), toggleable in-app and persisted
 - Plain view toggle for clean selection/copy (Ctrl+T)
 - One-shot copy to clipboard (Ctrl+Y)
 
@@ -32,6 +33,12 @@ Run
 - ./sn
 - ./sn --url https://secret-note-backend.lugetech.com --autosave --autosave-debounce-ms 1200
 - ./sn --insecure (only if using dev HTTPS with self-signed certs)
+
+Autosave
+- Toggle in the app: press Ctrl+Shift+S (persisted to config immediately)
+- One-time for this run: ./sn --autosave (optional: --autosave-debounce-ms 1200)
+- Default debounce: 1200 ms (sensible balance between responsiveness and server load)
+- You can also edit preferences.autosaveEnabled and preferences.autosaveDebounceMs in the config
 
 First run
 - You’ll be asked:
@@ -57,7 +64,9 @@ Config paths
 Security
 - Passphrase lives only in memory for the session and is zeroed on exit.
 - No passphrases in config or logs.
+- No recovery: If you forget your passphrase, your note is permanently unrecoverable.
 
 Troubleshooting
+- Status shows Connected/Offline; the backend host is not displayed.
 - If you see a server health warning, ensure your backend is running and the URL is correct.
 - Saving issues often mean the passphrase doesn’t match the note or the server is unreachable.

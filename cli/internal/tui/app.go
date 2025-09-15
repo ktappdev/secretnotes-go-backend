@@ -34,6 +34,10 @@ type EditorApp struct {
 
 	// View modes
 	plainCopyMode bool
+	showAbout     bool
+
+	// connectivity
+	connected  bool
 
 	// data
 	loaded      bool
@@ -84,6 +88,15 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case tea.KeyMsg:
 		s := m.String()
+		// About overlay interaction
+		if a.showAbout {
+			switch s {
+			case "?", "esc", "enter", "ctrl+c":
+				a.showAbout = false
+				return a, nil
+			}
+			return a, nil
+		}
 		if a.prompting {
 			// Passphrase prompt interactions
 			switch s {
@@ -112,6 +125,9 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		switch s {
+		case "?":
+			a.showAbout = !a.showAbout
+			return a, nil
 		case "ctrl+s":
 			return a, a.saveCmd()
 		case "ctrl+p":
@@ -137,25 +153,29 @@ case "ctrl+t":
 		case "ctrl+c", "ctrl+q":
 			return a, tea.Quit
 		}
-	case loadedMsg:
+case loadedMsg:
 		if m.err != nil {
 			a.initialErr = m.err
+			a.connected = false
 			a.ta.Placeholder = "Failed to load note (press Ctrl+Q to quit)"
-			a.status = fmt.Sprintf("Error: %v", m.err)
+			a.status = "Offline"
 			return a, nil
 		}
 		a.loaded = true
+		a.connected = true
 		a.ta.SetValue(m.note.Message)
 		a.ta.Placeholder = "Start typing your secure note..."
-		a.status = "Loaded"
+		a.status = "Connected"
 		return a, nil
 case savedMsg:
 		if m.err != nil {
-			a.status = fmt.Sprintf("Save failed: %v", m.err)
+			a.connected = false
+			a.status = "Offline (save failed)"
 			return a, nil
 		}
+		a.connected = true
 		a.lastSaved = time.Now()
-		a.status = fmt.Sprintf("Saved at %s", a.lastSaved.Format("15:04:05"))
+		a.status = fmt.Sprintf("Saved %s", a.lastSaved.Format("15:04:05"))
 		return a, nil
 	case autoSaveMsg:
 		// Only save if token matches the latest sequence
@@ -180,18 +200,42 @@ case savedMsg:
 }
 
 func (a *EditorApp) View() string {
-if a.plainCopyMode {
+	if a.plainCopyMode {
 		// Show only the raw note content with no UI, borders, or line numbers.
 		return a.ta.Value()
 	}
 	border := lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).Padding(0, 1)
-	status := fmt.Sprintf("Server: %s  |  Autosave: %v  |  %s", a.serverName, a.autosave, a.status)
+	conn := "Offline"
+	if a.connected {
+		conn = "Connected"
+	}
+	status := fmt.Sprintf("Status: %s  |  Autosave: %v", conn, a.autosave)
+	if a.status != "" {
+		status = fmt.Sprintf("%s  |  %s", status, a.status)
+	}
 	base := border.Render(a.ta.View()) + "\n" + lipgloss.NewStyle().Faint(true).Render(status)
+	// footer hints
+	hints := "?: About • Ctrl+T Plain • Ctrl+Y Copy • Ctrl+P Passphrase • Ctrl+S Save • Ctrl+Q Quit"
+	base = base + "\n" + lipgloss.NewStyle().Faint(true).Render(hints)
+	if a.showAbout {
+		// About modal
+		header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63")).Render("SecretNotes CLI")
+		sub := lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("135")).Render("Created by Clint and Ken for Lugetech")
+		body := "A zero‑knowledge, passphrase‑based, single‑note editor.\n" +
+			"One passphrase → one note, encrypted end‑to‑end.\n" +
+			"No accounts, no tracking — your secret stays yours.\n" +
+			"Text‑first TUI with save, autosave, and quick copy."
+		warn := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).Render("Important: If you forget your passphrase, your note is permanently unrecoverable.")
+		modalBorder := lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).Padding(1, 2)
+		modal := modalBorder.Render(header+"\n"+sub+"\n\n"+body+"\n\n"+warn+"\n\nPress ? or Esc to close")
+		return base + "\n" + modal
+	}
 	if a.prompting {
 		modalBorder := lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).Padding(1, 2)
 		title := lipgloss.NewStyle().Bold(true).Render("Change passphrase")
 		prompt := "New passphrase: " + a.pin.View() + "\nPress Enter to load, Esc to cancel"
-		modal := modalBorder.Render(title+"\n"+prompt)
+		warn := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).Render("No recovery: If you forget your passphrase, nobody can recover your note.")
+		modal := modalBorder.Render(title+"\n"+prompt+"\n\n"+warn)
 		return base + "\n" + modal
 	}
 	return base
