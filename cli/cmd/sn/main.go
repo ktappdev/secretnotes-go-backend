@@ -115,11 +115,17 @@ func main() {
 	defer zeroBytes(passphrase)
 
 	// Start TUI editor
-	app := tui.NewEditorApp(client,
+	app := tui.NewEditorApp(
+		client,
 		passphrase,
 		server.Name,
 		cfg.Preferences.AutosaveEnabled,
 		time.Duration(cfg.Preferences.AutosaveDebounceMs)*time.Millisecond,
+		func(enabled bool, debounceMs int) error {
+			cfg.Preferences.AutosaveEnabled = enabled
+			if debounceMs > 0 { cfg.Preferences.AutosaveDebounceMs = debounceMs }
+			return config.Save(cfgPath, &cfg)
+		},
 	)
 
 	// Handle Ctrl+C as graceful cancel

@@ -39,12 +39,15 @@ type EditorApp struct {
 	// connectivity
 	connected  bool
 
+	// persistence
+	savePref    func(enabled bool, debounceMs int) error
+
 	// data
 	loaded      bool
 	initialErr  error
 }
 
-func NewEditorApp(client *api.Client, passphrase []byte, serverName string, autosave bool, debounce time.Duration) *EditorApp {
+func NewEditorApp(client *api.Client, passphrase []byte, serverName string, autosave bool, debounce time.Duration, savePref func(bool, int) error) *EditorApp {
 	ta := textarea.New()
 	ta.Placeholder = "Loading note..."
 	ta.Focus()
@@ -69,6 +72,7 @@ func NewEditorApp(client *api.Client, passphrase []byte, serverName string, auto
 		autosave:   autosave,
 		debounce:   debounce,
 		pin:        pin,
+		savePref:   savePref,
 	}
 }
 
@@ -128,6 +132,14 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "?":
 			a.showAbout = !a.showAbout
 			return a, nil
+		case "ctrl+shift+s":
+			// Toggle autosave and persist preference
+			a.autosave = !a.autosave
+			if a.savePref != nil {
+				_ = a.savePref(a.autosave, int(a.debounce/time.Millisecond))
+			}
+			if a.autosave { a.status = "Autosave: on" } else { a.status = "Autosave: off" }
+			return a, nil
 		case "ctrl+s":
 			return a, a.saveCmd()
 		case "ctrl+p":
@@ -163,9 +175,10 @@ case loadedMsg:
 		}
 		a.loaded = true
 		a.connected = true
-		a.ta.SetValue(m.note.Message)
+	a.ta.SetValue(m.note.Message)
 		a.ta.Placeholder = "Start typing your secure note..."
-		a.status = "Connected"
+		// Clear transient status to avoid duplicate "Connected" in footer
+		a.status = ""
 		return a, nil
 case savedMsg:
 		if m.err != nil {
@@ -210,12 +223,12 @@ func (a *EditorApp) View() string {
 		conn = "Connected"
 	}
 	status := fmt.Sprintf("Status: %s  |  Autosave: %v", conn, a.autosave)
-	if a.status != "" {
+	if a.status != "" && a.status != "Connected" {
 		status = fmt.Sprintf("%s  |  %s", status, a.status)
 	}
 	base := border.Render(a.ta.View()) + "\n" + lipgloss.NewStyle().Faint(true).Render(status)
 	// footer hints
-	hints := "?: About • Ctrl+T Plain • Ctrl+Y Copy • Ctrl+P Passphrase • Ctrl+S Save • Ctrl+Q Quit"
+	hints := "?: About • Ctrl+T Plain • Ctrl+Y Copy • Ctrl+P Passphrase • Ctrl+Shift+S Autosave • Ctrl+S Save • Ctrl+Q Quit"
 	base = base + "\n" + lipgloss.NewStyle().Faint(true).Render(hints)
 	if a.showAbout {
 		// About modal

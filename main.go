@@ -11,8 +11,8 @@ import (
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/dbx"
-	_ "secretnotes/migrations" // Import migrations
-	"secretnotes/services"
+	_ "github.com/ktappdev/secretnotes-go-backend/migrations" // Import migrations
+	"github.com/ktappdev/secretnotes-go-backend/services"
 )
 
 func main() {
