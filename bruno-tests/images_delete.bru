@@ -1,0 +1,25 @@
+meta {
+  name: Images - Delete
+  type: http
+  seq: 8
+}
+
+delete {
+  url: {{baseUrl}}/api/secretnotes/notes/image
+  body: none
+  auth: none
+}
+
+headers {
+  X-Passphrase: {{testPhrase}}
+}
+
+tests {
+  test("Status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+
+  test("Response contains message", function() {
+    expect(res.getBody()).to.have.property('message');
+  });
+}

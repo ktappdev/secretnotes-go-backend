@@ -10,7 +10,6 @@ import (
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/migratecmd"
 	"github.com/pocketbase/dbx"
 	_ "secretnotes/migrations" // Import migrations
 	"secretnotes/services"
@@ -28,15 +27,6 @@ func main() {
 	encryptionService := services.NewEncryptionService()
 	noteService := services.NewNoteService(app, encryptionService)
 	fileService := services.NewFileService(app, encryptionService)
-
-	// Register migrate command for Go migrations (compiled via init() in migrations/)
-	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{})
-
-	// Best-effort schema fix: remove deprecated encrypted_content field at startup (no CLI needed)
-	if coll, err := app.FindCollectionByNameOrId("encrypted_files"); err == nil {
-		coll.Fields.RemoveById("encrypted_content")
-		_ = app.Save(coll)
-	}
 
 	// Register custom routes
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
@@ -243,15 +233,19 @@ func handleUploadImage(e *core.RequestEvent, phrase string, noteService *service
 		})
 	}
 	
-	// Update note with image hash reference using note service
-	// We need to add this method to NoteService
-	_ = fileHash // For now, we'll handle this in a follow-up
-	
+	// Update note with image hash reference
+	if err := noteService.UpdateNoteImageHash(phrase, fileHash); err != nil {
+		return e.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to update note with image reference: " + err.Error(),
+		})
+	}
+
 	return e.JSON(http.StatusOK, map[string]any{
 		"message": "Image uploaded successfully",
 		"fileName": header.Filename,
 		"fileSize": header.Size,
 		"contentType": header.Header.Get("Content-Type"),
+		"fileHash": fileHash,
 	})
 }
 

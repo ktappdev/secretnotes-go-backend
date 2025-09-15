@@ -1,0 +1,25 @@
+meta {
+  name: Notes - Create (POST)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/secretnotes/notes
+  body: none
+  auth: none
+}
+
+headers {
+  X-Passphrase: {{testPhrase2}}
+}
+
+tests {
+  test("Status is 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+
+  test("Response contains message", function() {
+    expect(res.getBody()).to.have.property('message');
+  });
+}

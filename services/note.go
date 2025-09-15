@@ -187,6 +187,34 @@ func (n *NoteService) DeleteNote(phrase string) error {
 	return nil
 }
 
+// UpdateNoteImageHash updates the image hash for a note
+func (n *NoteService) UpdateNoteImageHash(phrase, imageHash string) error {
+	// Validate phrase length
+	if len(phrase) < 3 {
+		return fmt.Errorf("phrase must be at least 3 characters long")
+	}
+
+	// Hash the phrase for secure lookup
+	phraseHash := n.hashPhrase(phrase)
+
+	// Find the existing note
+	records, err := n.App.FindRecordsByFilter("notes", "phrase_hash = {:phrase_hash}", "", 1, 0, dbx.Params{"phrase_hash": phraseHash})
+	if err != nil || len(records) == 0 {
+		return fmt.Errorf("note not found")
+	}
+
+	record := records[0]
+
+	// Update the image hash
+	record.Set("image_hash", imageHash)
+
+	if err := n.App.Save(record); err != nil {
+		return fmt.Errorf("failed to update note image hash: %w", err)
+	}
+
+	return nil
+}
+
 // hashPhrase creates a SHA-256 hash of the phrase for secure storage and lookup
 func (n *NoteService) hashPhrase(phrase string) string {
 	hash := sha256.Sum256([]byte(phrase))

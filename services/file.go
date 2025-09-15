@@ -53,34 +53,34 @@ func (f *FileService) StoreEncryptedFile(phrase string, file multipart.File, fil
 		return "", fmt.Errorf("files collection not found: %w", err)
 	}
 
-	records, _ := f.App.FindRecordsByFilter(
+	// Delete any existing files with the same phrase hash
+	existingRecords, _ := f.App.FindRecordsByFilter(
 		"encrypted_files",
 		"phrase_hash = {:phrase_hash}",
-		"-created",
-		1,
+		"",
+		-1, // get all
 		0,
 		dbx.Params{"phrase_hash": phraseHash},
 	)
-
-	var rec *core.Record
-	if len(records) > 0 {
-		rec = records[0]
-	} else {
-		rec = core.NewRecord(filesCollection)
-		rec.Set("phrase_hash", phraseHash)
+	for _, existingRec := range existingRecords {
+		f.App.Delete(existingRec)
 	}
+
+	// Create a new record
+	rec := core.NewRecord(filesCollection)
+	rec.Set("phrase_hash", phraseHash)
 
 	// Set metadata fields
 	rec.Set("file_name", filename)
 	rec.Set("content_type", contentType)
 
-	// Use a form to attach the encrypted bytes to the file field
-	// Attach the encrypted bytes to the file field directly via the record
+	// Create a file from the encrypted bytes and attach it to the file field
 	encFile, err := filesystem.NewFileFromBytes(encryptedContent, filename)
 	if err != nil {
 		return "", fmt.Errorf("failed to create file from bytes: %w", err)
 	}
-	rec.Set("file_data", encFile)
+	// File fields expect a slice of files
+	rec.Set("file_data", []*filesystem.File{encFile})
 
 	if err := f.App.Save(rec); err != nil {
 		return "", fmt.Errorf("failed to save encrypted file: %w", err)
@@ -105,33 +105,56 @@ func (f *FileService) RetrieveDecryptedFile(phrase string) ([]byte, string, stri
 		return nil, "", "", fmt.Errorf("error finding encrypted file: %w", err)
 	}
 	if len(records) == 0 {
-		return nil, "", "", fmt.Errorf("image file not found")
+		return nil, "", "", fmt.Errorf("encrypted file not found")
 	}
 
 	rec := records[0]
 	contentType := rec.GetString("content_type")
 	filename := rec.GetString("file_name")
 
-	storedName := rec.GetString("file_data")
-	if storedName == "" {
-		return nil, "", "", fmt.Errorf("stored file not found")
+	// Extract the stored filename from the file_data field
+	// PocketBase stores this as a string reference to the actual file
+	fileData := rec.Get("file_data")
+	var storedFilename string
+	switch v := fileData.(type) {
+	case string:
+		storedFilename = v
+	case []*filesystem.File:
+		if len(v) > 0 {
+			storedFilename = v[0].Name
+		}
+	case *filesystem.File:
+		storedFilename = v.Name
+	default:
+		return nil, "", "", fmt.Errorf("invalid file data format")
 	}
 
+	if storedFilename == "" {
+		return nil, "", "", fmt.Errorf("no file stored")
+	}
+
+	// Access the file through PocketBase's filesystem
+	// Use the original BaseFilesPath approach but fix the file access method
 	fs, err := f.App.NewFilesystem()
 	if err != nil {
 		return nil, "", "", fmt.Errorf("filesystem init: %w", err)
 	}
 	defer fs.Close()
 
-	// Construct the file storage key and read bytes
-	key := rec.BaseFilesPath() + "/file_data/" + storedName
-	file, err := fs.GetFile(key)
+	// Construct the file storage key using PocketBase's BaseFilesPath
+	// Files are stored directly under the record path (no /file_data/ subdirectory)
+	fileKey := rec.BaseFilesPath() + "/" + storedFilename
+
+	// Use GetReader to access the encrypted file through PocketBase's filesystem API
+	reader, err := fs.GetReader(fileKey)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("get stored file: %w", err)
+		return nil, "", "", fmt.Errorf("failed to access encrypted file: %w", err)
 	}
-encryptedBytes, err := io.ReadAll(file)
+	defer reader.Close()
+
+	encryptedBytes, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("read stored file: %w", err)
+		return nil, "", "", fmt.Errorf("read file content: %w", err)
 	}
 
 	decryptedContent, err := f.Encryption.DecryptData(encryptedBytes, phrase)
@@ -149,7 +172,7 @@ func (f *FileService) DeleteEncryptedFile(phrase string) error {
 	records, err := f.App.FindRecordsByFilter(
 		"encrypted_files",
 		"phrase_hash = {:phrase_hash}",
-		"-created",
+		"",
 		1,
 		0,
 		dbx.Params{"phrase_hash": phraseHash},
