@@ -240,12 +240,36 @@ func handleUploadImage(e *core.RequestEvent, phrase string, noteService *service
 		})
 	}
 
+	// Try to read back the encrypted_files record to include timestamps in the response.
+	// If anything fails here, we still return success without timestamps to avoid breaking clients.
+	var createdVal any
+	var updatedVal any
+	if app := e.App; app != nil {
+		phraseHash := hashPhrase(phrase)
+		records, err := app.FindRecordsByFilter(
+			"encrypted_files",
+			"phrase_hash = {:phrase_hash}",
+			"",
+			1,
+			0,
+			dbx.Params{"phrase_hash": phraseHash},
+		)
+		if err == nil && len(records) > 0 {
+			rec := records[0]
+			// Use whatever "created"/"updated" is available (system or custom Autodate fields)
+			createdVal = rec.GetDateTime("created")
+			updatedVal = rec.GetDateTime("updated")
+		}
+	}
+
 	return e.JSON(http.StatusOK, map[string]any{
 		"message": "Image uploaded successfully",
 		"fileName": header.Filename,
 		"fileSize": header.Size,
 		"contentType": header.Header.Get("Content-Type"),
 		"fileHash": fileHash,
+		"created": createdVal,
+		"updated": updatedVal,
 	})
 }
 
