@@ -35,6 +35,10 @@ Run
 - ./sn --url https://secret-note-backend.lugetech.com --autosave --autosave-debounce-ms 1200
 - ./sn --insecure (only if using dev HTTPS with self-signed certs)
 
+Binaries from GitHub Releases
+- We publish prebuilt binaries for macOS, Linux, and Windows when a tag is pushed (vX.Y.Z)
+- Download from the Releases tab and place sn in your PATH
+
 Install
 - Requirements: Go 1.22+
 - Local (from this repo):
