@@ -39,6 +39,14 @@ Binaries from GitHub Releases
 - We publish prebuilt binaries for macOS, Linux, and Windows when a tag is pushed (vX.Y.Z)
 - Download from the Releases tab and place sn in your PATH
 
+Cutting a release (automated)
+- Use the helper script to create and push a tag which triggers the release workflow:
+  ```bash
+  ./scripts/release.sh v0.1.1
+  # or interactively: ./scripts/release.sh
+  ```
+- The workflow builds and uploads multi-OS binaries and checksums to the GitHub Release.
+
 Install
 - Requirements: Go 1.22+
 - Local (from this repo):
