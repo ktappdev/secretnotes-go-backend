@@ -248,7 +248,8 @@ func (a *EditorApp) View() string {
 			"One passphrase → one note, encrypted end‑to‑end.\n" +
 			"No accounts, no tracking — your secret stays yours.\n" +
 			"Text‑first TUI with save, autosave, and quick copy.\n" +
-			"Privacy: Ctrl+Q wipes screen + history, Ctrl+C clears screen only."
+			"Privacy: Ctrl+Q wipes screen + history, Ctrl+C clears screen only.\n" +
+			"Note: Not all terminals clear scrollback; for maximum privacy close your terminal or run with SN_WIPE_AGGRESSIVE=1."
 		warn := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).Render("Important: If you forget your passphrase, your note is permanently unrecoverable.")
 		modalBorder := lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).Padding(1, 2)
 		modal := modalBorder.Render(header+"\n"+sub+"\n\n"+body+"\n\n"+warn+"\n\nPress ? or Esc to close")

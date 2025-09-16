@@ -87,6 +87,12 @@ Security
 Privacy & exit behavior
 - Ctrl+Q: wipes the screen and scrollback to remove any trace of your note
 - Ctrl+C: clears the visible screen but preserves scrollback history
+- Terminal support varies: not all terminals honor scrollback clear (CSI 3 J). If privacy is critical, manually clear or close your terminal after quitting. For stubborn terminals, set SN_WIPE_AGGRESSIVE=1 when launching.
+
+Why clear the screen?
+- Your note content can remain in the terminal’s visible buffer or scrollback history
+- Screen recording, streaming, or remote support tools can capture that history
+- Clearing (and optionally wiping scrollback) reduces the chance of accidental disclosure
 
 Troubleshooting
 - Status shows Connected/Offline; the backend host is not displayed.

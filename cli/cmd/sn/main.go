@@ -138,12 +138,27 @@ if err := app.Run(ctxRun); err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("app error: %v", err)
 	}
 // Clear terminal based on exit mode: Ctrl+Q wipes scrollback; Ctrl+C only clears screen
-switch app.ExitMode() {
-case "wipe":
-	fmt.Print("\033[2J\033[3J\033[H")
-default: // "clear" or unspecified
-	fmt.Print("\033[2J\033[H")
+clearTerminal := func(mode string) {
+	term := os.Getenv("TERM")
+	aggressive := os.Getenv("SN_WIPE_AGGRESSIVE") == "1"
+	// Always clear current screen and move cursor home
+	fmt.Print("\x1b[2J\x1b[H")
+	if mode == "wipe" {
+		// Try to clear scrollback (CSI 3 J) for terminals that support it
+		if term != "" {
+			fmt.Print("\x1b[3J")
+		}
+		// Optional aggressive wipe: push a lot of blank lines to overflow scrollback
+		if aggressive {
+			const lines = 5000
+			for i := 0; i < lines; i++ {
+				fmt.Print("\n")
+			}
+			fmt.Print("\x1b[2J\x1b[H")
+		}
+	}
 }
+clearTerminal(app.ExitMode())
 }
 
 func promptPassphrase() ([]byte, error) {
