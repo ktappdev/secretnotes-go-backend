@@ -35,6 +35,44 @@ func main() {
 	flag.StringVar(&flagConfigPath, "config", "", "Path to config file (optional)")
 	flag.Parse()
 
+	// Clear terminal function - defined early so we can use it for passphrase hiding
+	clearTerminal := func(mode string) {
+		term := os.Getenv("TERM")
+		aggressive := os.Getenv("SN_WIPE_AGGRESSIVE") == "1"
+		// Always clear current screen and move cursor home
+		fmt.Print("\x1b[2J\x1b[H")
+		if mode == "wipe" {
+			// Try to clear scrollback (CSI 3 J) for terminals that support it
+			if term != "" {
+				fmt.Print("\x1b[3J")
+			}
+			// Optional aggressive wipe: push a lot of blank lines to overflow scrollback
+			if aggressive {
+				const lines = 5000
+				for i := 0; i < lines; i++ {
+					fmt.Print("\n")
+				}
+				fmt.Print("\x1b[2J\x1b[H")
+			}
+		}
+	}
+
+	// Check for positional passphrase argument
+	args := flag.Args()
+	var passphrase []byte
+	var passphraseFromArg bool
+
+	if len(args) > 0 {
+		passphraseStr := args[0]
+		if len(passphraseStr) < 3 {
+			log.Fatalf("passphrase must be at least 3 characters")
+		}
+		passphrase = []byte(passphraseStr)
+		passphraseFromArg = true
+		// Clear screen immediately to hide the typed passphrase
+		clearTerminal("clear")
+	}
+
 	// Load or create config
 	cfg, cfgPath, err := config.LoadOrInit(flagConfigPath)
 	if err != nil {
@@ -108,10 +146,13 @@ func main() {
 		}
 	}
 
-	// Prompt for passphrase (never saved)
-	passphrase, err := promptPassphrase()
-	if err != nil {
-		log.Fatalf("failed to read passphrase: %v", err)
+	// Prompt for passphrase (never saved) if not provided as argument
+	if !passphraseFromArg {
+		var err error
+		passphrase, err = promptPassphrase()
+		if err != nil {
+			log.Fatalf("failed to read passphrase: %v", err)
+		}
 	}
 	// Ensure we zero the buffer on exit
 	defer zeroBytes(passphrase)
@@ -137,27 +178,6 @@ func main() {
 if err := app.Run(ctxRun); err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("app error: %v", err)
 	}
-// Clear terminal based on exit mode: Ctrl+Q wipes scrollback; Ctrl+C only clears screen
-clearTerminal := func(mode string) {
-	term := os.Getenv("TERM")
-	aggressive := os.Getenv("SN_WIPE_AGGRESSIVE") == "1"
-	// Always clear current screen and move cursor home
-	fmt.Print("\x1b[2J\x1b[H")
-	if mode == "wipe" {
-		// Try to clear scrollback (CSI 3 J) for terminals that support it
-		if term != "" {
-			fmt.Print("\x1b[3J")
-		}
-		// Optional aggressive wipe: push a lot of blank lines to overflow scrollback
-		if aggressive {
-			const lines = 5000
-			for i := 0; i < lines; i++ {
-				fmt.Print("\n")
-			}
-			fmt.Print("\x1b[2J\x1b[H")
-		}
-	}
-}
 clearTerminal(app.ExitMode())
 }
 
