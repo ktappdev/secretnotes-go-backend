@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -156,9 +157,9 @@ func handleGetOrCreateNote(e *core.RequestEvent, phrase string, noteService *ser
 		})
 	}
 
-	// Determine status code based on whether note was created or retrieved
+	// Determine status code based on whether note was just created
 	status := http.StatusOK
-	if note.Message == "Welcome to your new secure note!" {
+	if note.Created.Equal(note.Updated) {
 		status = http.StatusCreated
 	}
 
@@ -383,14 +384,14 @@ func handleUpsertNoteWithMessage(e *core.RequestEvent, phrase string, message st
         record.Set("phrase_hash", phraseHash)
     }
 
-    // Encrypt and set message (allow empty string)
+    // Encrypt and set message (allow empty string, encode as base64 to prevent corruption)
     encryptedMessage, err := encryptionService.EncryptData([]byte(message), phrase)
     if err != nil {
         return e.JSON(http.StatusInternalServerError, map[string]string{
             "error": "Failed to encrypt message",
         })
     }
-    record.Set("message", string(encryptedMessage))
+    record.Set("message", base64.StdEncoding.EncodeToString(encryptedMessage))
 
     if err := app.Save(record); err != nil {
         return e.JSON(http.StatusInternalServerError, map[string]string{

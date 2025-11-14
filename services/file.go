@@ -2,6 +2,7 @@ package services
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -76,8 +77,8 @@ func (f *FileService) StoreEncryptedFile(phrase string, file multipart.File, fil
 		return "", fmt.Errorf("failed to encrypt filename: %w", err)
 	}
 
-	// Set metadata fields
-	rec.Set("file_name", string(encryptedFilename))
+	// Set metadata fields (encode encrypted binary data as base64 to prevent corruption)
+	rec.Set("file_name", base64.StdEncoding.EncodeToString(encryptedFilename))
 	rec.Set("content_type", contentType)
 
 	// Generate hash-based storage filename to obscure it on disk
@@ -120,9 +121,13 @@ func (f *FileService) RetrieveDecryptedFile(phrase string) ([]byte, string, stri
 	rec := records[0]
 	contentType := rec.GetString("content_type")
 
-	// Decrypt the filename (it's stored encrypted in the database)
-	encryptedFilename := rec.GetString("file_name")
-	decryptedFilenameBytes, err := f.Encryption.DecryptData([]byte(encryptedFilename), phrase)
+	// Decrypt the filename (it's stored encrypted and base64-encoded in the database)
+	encryptedFilenameB64 := rec.GetString("file_name")
+	encryptedFilename, err := base64.StdEncoding.DecodeString(encryptedFilenameB64)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("failed to decode filename: %w", err)
+	}
+	decryptedFilenameBytes, err := f.Encryption.DecryptData(encryptedFilename, phrase)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("failed to decrypt filename: %w", err)
 	}

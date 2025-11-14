@@ -215,7 +215,7 @@ X-Passphrase: my-secret-passphrase
 ```json
 {
   "id": "ab12cd34ef56gh78",
-  "message": "Welcome to your new secure note!",
+  "message": "",
   "hasImage": false,
   "created": "2024-01-15T10:30:00.000Z",
   "updated": "2024-01-15T10:30:00.000Z"
@@ -240,7 +240,7 @@ X-Passphrase: my-secret-passphrase
 - `500 Internal Server Error`: Server error
 
 **Important Notes**:
-- New notes automatically get a welcome message: "Welcome to your new secure note!"
+- New notes start with an empty message
 - The `message` field is always decrypted before being returned
 - The `hasImage` boolean indicates if an image is attached
 - Same passphrase always returns same note

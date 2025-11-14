@@ -2,6 +2,7 @@ package services
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -55,17 +56,24 @@ func (n *NoteService) GetOrCreateNote(phrase string) (*Note, error) {
 	if len(records) > 0 {
 		// Note exists, decrypt and return
 		record := records[0]
-		encryptedMessage := record.GetString("message")
+		encryptedMessageB64 := record.GetString("message")
 		var message string
 
-		if encryptedMessage != "" {
-			// Try to decrypt the message
-			decryptedBytes, err := n.Encryption.DecryptData([]byte(encryptedMessage), phrase)
+		if encryptedMessageB64 != "" {
+			// Decode from base64 first
+			encryptedMessage, err := base64.StdEncoding.DecodeString(encryptedMessageB64)
 			if err != nil {
-				// If decryption fails, assume it's plaintext
-				message = encryptedMessage
+				// If decode fails, assume it's old format or plaintext
+				message = encryptedMessageB64
 			} else {
-				message = string(decryptedBytes)
+				// Try to decrypt the message
+				decryptedBytes, err := n.Encryption.DecryptData(encryptedMessage, phrase)
+				if err != nil {
+					// If decryption fails, assume it's plaintext
+					message = encryptedMessageB64
+				} else {
+					message = string(decryptedBytes)
+				}
 			}
 		}
 
@@ -88,13 +96,13 @@ func (n *NoteService) GetOrCreateNote(phrase string) (*Note, error) {
 	record := core.NewRecord(collection)
 	record.Set("phrase_hash", phraseHash)
 
-	// Create an encrypted welcome message
-	encryptedMessage, err := n.Encryption.EncryptData([]byte("Welcome to your new secure note!"), phrase)
+	// Create an encrypted empty message (encode as base64 to prevent corruption)
+	encryptedMessage, err := n.Encryption.EncryptData([]byte(""), phrase)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt initial message: %w", err)
 	}
 
-	record.Set("message", string(encryptedMessage))
+	record.Set("message", base64.StdEncoding.EncodeToString(encryptedMessage))
 
 	if err := n.App.Save(record); err != nil {
 		return nil, fmt.Errorf("failed to create note: %w", err)
@@ -103,7 +111,7 @@ func (n *NoteService) GetOrCreateNote(phrase string) (*Note, error) {
 	return &Note{
 		ID:        record.Id,
 		Phrase:    phraseHash,
-		Message:   "Welcome to your new secure note!",
+		Message:   "",
 		ImageHash: "",
 		Created:   record.GetDateTime("created").Time(),
 		Updated:   record.GetDateTime("updated").Time(),
@@ -128,14 +136,14 @@ func (n *NoteService) UpdateNote(phrase, message string) (*Note, error) {
 
 	record := records[0]
 
-	// Encrypt the message
+	// Encrypt the message (encode as base64 to prevent corruption)
 	encryptedMessage, err := n.Encryption.EncryptData([]byte(message), phrase)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt message: %w", err)
 	}
 
 	// Update the record
-	record.Set("message", string(encryptedMessage))
+	record.Set("message", base64.StdEncoding.EncodeToString(encryptedMessage))
 
 	if err := n.App.Save(record); err != nil {
 		return nil, fmt.Errorf("failed to update note: %w", err)
