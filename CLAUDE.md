@@ -9,6 +9,7 @@ Secret Notes Go Backend is a secure, self-hosted notes application built with Go
 ## Development Commands
 
 ### Running the Application
+
 ```bash
 # Run the development server (default: 127.0.0.1:8091)
 go run main.go
@@ -22,6 +23,7 @@ go run main.go migrate collections
 ```
 
 ### Testing
+
 ```bash
 # Run all tests
 go test ./...
@@ -34,6 +36,7 @@ go test -v ./services/...
 ```
 
 ### Dependencies
+
 ```bash
 # Download dependencies
 go mod download
@@ -46,6 +49,7 @@ go get -u
 ```
 
 ### Database Management
+
 ```bash
 # Reset database (removes pb_data directory)
 rm -rf pb_data/
@@ -233,3 +237,4 @@ Files are encrypted before storage and decrypted on retrieval. The `FileService`
 - **Size limits**: Check multipart form size limits in handlers
 - **Content types**: Verify file types are properly handled
 - **Storage**: Ensure sufficient disk space in `pb_data/` directory
+

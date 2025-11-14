@@ -56,4 +56,8 @@ downloaded_file.txt
 
 # Crush directory
 .crush/
+.claude/
+.bruno-tests/
 secretnotes
+CLAUDE.md
+secretnotes-go-backend

@@ -70,12 +70,21 @@ func (f *FileService) StoreEncryptedFile(phrase string, file multipart.File, fil
 	rec := core.NewRecord(filesCollection)
 	rec.Set("phrase_hash", phraseHash)
 
+	// Encrypt the filename before storing (obscures it in admin UI)
+	encryptedFilename, err := f.Encryption.EncryptData([]byte(filename), phrase)
+	if err != nil {
+		return "", fmt.Errorf("failed to encrypt filename: %w", err)
+	}
+
 	// Set metadata fields
-	rec.Set("file_name", filename)
+	rec.Set("file_name", string(encryptedFilename))
 	rec.Set("content_type", contentType)
 
+	// Generate hash-based storage filename to obscure it on disk
+	storageFilename := f.generateStorageFilename(filename)
+
 	// Create a file from the encrypted bytes and attach it to the file field
-	encFile, err := filesystem.NewFileFromBytes(encryptedContent, filename)
+	encFile, err := filesystem.NewFileFromBytes(encryptedContent, storageFilename)
 	if err != nil {
 		return "", fmt.Errorf("failed to create file from bytes: %w", err)
 	}
@@ -110,7 +119,14 @@ func (f *FileService) RetrieveDecryptedFile(phrase string) ([]byte, string, stri
 
 	rec := records[0]
 	contentType := rec.GetString("content_type")
-	filename := rec.GetString("file_name")
+
+	// Decrypt the filename (it's stored encrypted in the database)
+	encryptedFilename := rec.GetString("file_name")
+	decryptedFilenameBytes, err := f.Encryption.DecryptData([]byte(encryptedFilename), phrase)
+	if err != nil {
+		return nil, "", "", fmt.Errorf("failed to decrypt filename: %w", err)
+	}
+	filename := string(decryptedFilenameBytes)
 
 	// Extract the stored filename from the file_data field
 	// PocketBase stores this as a string reference to the actual file
@@ -186,6 +202,13 @@ func (f *FileService) DeleteEncryptedFile(phrase string) error {
 		return fmt.Errorf("failed to delete encrypted file: %w", err)
 	}
 	return nil
+}
+
+// generateStorageFilename creates a SHA-256 hash-based filename for filesystem storage
+// This obscures the original filename on disk while maintaining consistency
+func (f *FileService) generateStorageFilename(originalFilename string) string {
+	hash := sha256.Sum256([]byte(originalFilename))
+	return hex.EncodeToString(hash[:])
 }
 
 // hashPhrase creates a SHA-256 hash of the phrase for secure storage and lookup
