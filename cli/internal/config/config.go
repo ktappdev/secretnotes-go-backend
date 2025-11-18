@@ -32,7 +32,7 @@ func Default() Config {
 	return Config{
 		Version: 1,
 		Servers: []Server{
-			{Name: "remote", URL: "https://secret-note-backend.lugetech.com", VerifyTLS: true},
+			{Name: "remote", URL: "https://pb.secretnotez.com", VerifyTLS: true},
 		},
 		DefaultServer: "remote",
 		Preferences: Preferences{

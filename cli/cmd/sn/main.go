@@ -22,14 +22,10 @@ import (
 func main() {
 	// Flags (overrides)
 	var (
-		flagURL      string
-		flagInsecure bool
-		flagAutosave bool
+		flagAutosave   bool
 		flagAutosaveMs int
 		flagConfigPath string
 	)
-	flag.StringVar(&flagURL, "url", "", "Server base URL (e.g., http://127.0.0.1:8091)")
-	flag.BoolVar(&flagInsecure, "insecure", false, "Skip TLS verification (https only)")
 	flag.BoolVar(&flagAutosave, "autosave", false, "Enable autosave")
 	flag.IntVar(&flagAutosaveMs, "autosave-debounce-ms", 1200, "Autosave debounce in milliseconds")
 	flag.StringVar(&flagConfigPath, "config", "", "Path to config file (optional)")
@@ -126,7 +122,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "warning: server health check failed: %v\n", err)
 		// Auto-fallback: if pointing to localhost dev URL, try the remote default
 		if server.URL == "http://127.0.0.1:8091" || server.URL == "http://localhost:8091" {
-			fallback := "https://secret-note-backend.lugetech.com"
+			fallback := "https://pb.secretnotez.com"
 			fmt.Fprintf(os.Stderr, "attempting fallback to %s...\n", fallback)
 			client2 := api.NewClient(fallback, true)
 			ctx2, cancel2 := context.WithTimeout(context.Background(), 4*time.Second)
@@ -166,7 +162,9 @@ func main() {
 		time.Duration(cfg.Preferences.AutosaveDebounceMs)*time.Millisecond,
 		func(enabled bool, debounceMs int) error {
 			cfg.Preferences.AutosaveEnabled = enabled
-			if debounceMs > 0 { cfg.Preferences.AutosaveDebounceMs = debounceMs }
+			if debounceMs > 0 {
+				cfg.Preferences.AutosaveDebounceMs = debounceMs
+			}
 			return config.Save(cfgPath, &cfg)
 		},
 	)
@@ -175,10 +173,10 @@ func main() {
 	ctxRun, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-if err := app.Run(ctxRun); err != nil && !errors.Is(err, context.Canceled) {
+	if err := app.Run(ctxRun); err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("app error: %v", err)
 	}
-clearTerminal(app.ExitMode())
+	clearTerminal(app.ExitMode())
 }
 
 func promptPassphrase() ([]byte, error) {
@@ -215,7 +213,7 @@ func firstRunSetup(cfg *config.Config) error {
 	}
 
 	// URL
-	defaultURL := "https://secret-note-backend.lugetech.com"
+	defaultURL := "https://pb.secretnotez.com"
 	fmt.Printf("Server URL [%s]: ", defaultURL)
 	url, _ := in.ReadString('\n')
 	url = strings.TrimSpace(url)
