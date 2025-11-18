@@ -22,18 +22,39 @@ import (
 func main() {
 	// Flags (overrides)
 	var (
-		flagURL        string
-		flagInsecure   bool
-		flagAutosave   bool
-		flagAutosaveMs int
-		flagConfigPath string
+		flagURL         string
+		flagInsecure    bool
+		flagAutosave    bool
+		flagAutosaveMs  int
+		flagConfigPath  string
+		flagPrintURL    bool
+		flagResetConfig bool
 	)
 	flag.StringVar(&flagURL, "url", "", "Server base URL (e.g., http://127.0.0.1:8091)")
 	flag.BoolVar(&flagInsecure, "insecure", false, "Skip TLS verification (https only)")
 	flag.BoolVar(&flagAutosave, "autosave", false, "Enable autosave")
 	flag.IntVar(&flagAutosaveMs, "autosave-debounce-ms", 1200, "Autosave debounce in milliseconds")
 	flag.StringVar(&flagConfigPath, "config", "", "Path to config file (optional)")
+	flag.BoolVar(&flagPrintURL, "print-url", false, "Print the server base URL and exit")
+	flag.BoolVar(&flagResetConfig, "reset-config", false, "Delete config file and recreate with defaults")
 	flag.Parse()
+
+	// Handle reset-config flag
+	if flagResetConfig {
+		cfgPath, err := config.PathForConfig(flagConfigPath)
+		if err != nil {
+			log.Fatalf("failed to determine config path: %v", err)
+		}
+		if err := os.Remove(cfgPath); err != nil && !os.IsNotExist(err) {
+			log.Fatalf("failed to delete config: %v", err)
+		}
+		cfg := config.Default()
+		if err := config.Save(cfgPath, &cfg); err != nil {
+			log.Fatalf("failed to create default config: %v", err)
+		}
+		fmt.Printf("Config reset to defaults at: %s\n", cfgPath)
+		return
+	}
 
 	// Clear terminal function - defined early so we can use it for passphrase hiding
 	clearTerminal := func(mode string) {
@@ -116,6 +137,11 @@ func main() {
 	server := cfg.CurrentServer()
 	if server == nil {
 		log.Fatal("no server configured")
+	}
+
+	if flagPrintURL {
+		fmt.Println(server.URL)
+		return
 	}
 
 	// Health check fast-fail
