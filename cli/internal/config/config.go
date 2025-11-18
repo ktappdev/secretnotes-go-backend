@@ -43,7 +43,7 @@ func Default() Config {
 	}
 }
 
-func pathForConfig(custom string) (string, error) {
+func PathForConfig(custom string) (string, error) {
 	if custom != "" {
 		return custom, nil
 	}
@@ -59,7 +59,7 @@ func pathForConfig(custom string) (string, error) {
 }
 
 func LoadOrInit(customPath string) (Config, string, error) {
-	cfgPath, err := pathForConfig(customPath)
+	cfgPath, err := PathForConfig(customPath)
 	if err != nil {
 		return Config{}, "", err
 	}
