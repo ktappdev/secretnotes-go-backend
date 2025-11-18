@@ -22,10 +22,14 @@ import (
 func main() {
 	// Flags (overrides)
 	var (
+		flagURL        string
+		flagInsecure   bool
 		flagAutosave   bool
 		flagAutosaveMs int
 		flagConfigPath string
 	)
+	flag.StringVar(&flagURL, "url", "", "Server base URL (e.g., http://127.0.0.1:8091)")
+	flag.BoolVar(&flagInsecure, "insecure", false, "Skip TLS verification (https only)")
 	flag.BoolVar(&flagAutosave, "autosave", false, "Enable autosave")
 	flag.IntVar(&flagAutosaveMs, "autosave-debounce-ms", 1200, "Autosave debounce in milliseconds")
 	flag.StringVar(&flagConfigPath, "config", "", "Path to config file (optional)")
