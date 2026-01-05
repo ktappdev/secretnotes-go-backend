@@ -4,15 +4,18 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"regexp"
+	"strconv"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/dbx"
-	_ "github.com/ktappdev/secretnotes-go-backend/migrations" // Import migrations
+	_ "github.com/ktappdev/secretnotes-go-backend/migrations"
 	"github.com/ktappdev/secretnotes-go-backend/services"
 )
 
@@ -69,6 +72,7 @@ func main() {
             data := struct {
                 Passphrase string `json:"passphrase"`
                 Message    string `json:"message"`
+                Version    int    `json:"version"`
             }{}
             if err := e.BindBody(&data); err != nil {
                 return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
@@ -77,18 +81,23 @@ func main() {
             if err != nil {
                 return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
             }
-            // Reuse original handler (expects phrase)
-            // Re-pack the message into the expected struct in that handler
-            e.Request.Body = http.NoBody // prevent double reads; handler will not re-bind
-            // Directly call the lower-level noteService method instead of handler expecting body
-            note, svcErr := noteService.UpdateNote(phrase, data.Message)
+            e.Request.Body = http.NoBody
+            note, svcErr := noteService.UpdateNote(phrase, data.Message, data.Version)
             if svcErr != nil {
+                if errors.Is(svcErr, services.ErrVersionConflict) {
+                    currentVersion := extractCurrentVersion(svcErr)
+                    return e.JSON(http.StatusConflict, map[string]any{
+                        "error": "version_conflict",
+                        "currentVersion": currentVersion,
+                    })
+                }
                 return e.JSON(http.StatusNotFound, map[string]string{"error": svcErr.Error()})
             }
             return e.JSON(http.StatusOK, map[string]any{
                 "id": note.ID,
                 "message": note.Message,
                 "hasImage": note.ImageHash != "",
+                "version": note.Version,
                 "created": note.Created,
                 "updated": note.Updated,
             })
@@ -99,6 +108,7 @@ func main() {
             data := struct {
                 Passphrase string `json:"passphrase"`
                 Message    string `json:"message"`
+                Version    int    `json:"version"`
             }{}
             if err := e.BindBody(&data); err != nil {
                 return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
@@ -107,8 +117,7 @@ func main() {
             if err != nil {
                 return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
             }
-            // Reuse existing upsert logic with modified signature
-            return handleUpsertNoteWithMessage(e, phrase, data.Message, noteService)
+            return handleUpsertNoteWithMessage(e, phrase, data.Message, data.Version, noteService)
         })
 
         // Upload image for note using passphrase from header
@@ -164,11 +173,12 @@ func handleGetOrCreateNote(e *core.RequestEvent, phrase string, noteService *ser
 	}
 
 	return e.JSON(status, map[string]any{
-		"id": note.ID,
-		"message": note.Message,
+		"id":       note.ID,
+		"message":  note.Message,
 		"hasImage": note.ImageHash != "",
-		"created": note.Created,
-		"updated": note.Updated,
+		"version":  note.Version,
+		"created":  note.Created,
+		"updated":  note.Updated,
 	})
 }
 
@@ -355,7 +365,8 @@ func previewString(s string, max int) string {
 
 // handleUpsertNote creates or updates a note in a single call.
 // If a record for the phrase exists, it updates the message; otherwise it creates a new note with the message.
-func handleUpsertNoteWithMessage(e *core.RequestEvent, phrase string, message string, noteService *services.NoteService) error {
+// Supports optimistic locking via version parameter.
+func handleUpsertNoteWithMessage(e *core.RequestEvent, phrase string, message string, version int, noteService *services.NoteService) error {
     app := e.App
     encryptionService := services.NewEncryptionService()
 
@@ -370,8 +381,23 @@ func handleUpsertNoteWithMessage(e *core.RequestEvent, phrase string, message st
     }
 
     var record *core.Record
-    if len(records) > 0 {
+    var newVersion int
+    isNew := len(records) == 0
+
+    if !isNew {
         record = records[0]
+        currentVersion := int(record.GetInt("version"))
+        if currentVersion == 0 {
+            currentVersion = 1
+        }
+        // Check version if provided (optimistic locking)
+        if version > 0 && version != currentVersion {
+            return e.JSON(http.StatusConflict, map[string]any{
+                "error":          "version_conflict",
+                "currentVersion": currentVersion,
+            })
+        }
+        newVersion = currentVersion + 1
     } else {
         // Create new record
         collection, err := app.FindCollectionByNameOrId("notes")
@@ -382,9 +408,10 @@ func handleUpsertNoteWithMessage(e *core.RequestEvent, phrase string, message st
         }
         record = core.NewRecord(collection)
         record.Set("phrase_hash", phraseHash)
+        newVersion = 1
     }
 
-    // Encrypt and set message (allow empty string, encode as base64 to prevent corruption)
+    // Encrypt and set message
     encryptedMessage, err := encryptionService.EncryptData([]byte(message), phrase)
     if err != nil {
         return e.JSON(http.StatusInternalServerError, map[string]string{
@@ -392,6 +419,7 @@ func handleUpsertNoteWithMessage(e *core.RequestEvent, phrase string, message st
         })
     }
     record.Set("message", base64.StdEncoding.EncodeToString(encryptedMessage))
+    record.Set("version", newVersion)
 
     if err := app.Save(record); err != nil {
         return e.JSON(http.StatusInternalServerError, map[string]string{
@@ -400,15 +428,27 @@ func handleUpsertNoteWithMessage(e *core.RequestEvent, phrase string, message st
     }
 
     status := http.StatusOK
-    if len(records) == 0 {
+    if isNew {
         status = http.StatusCreated
     }
 
     return e.JSON(status, map[string]any{
-        "id": record.Id,
-        "message": message,
+        "id":       record.Id,
+        "message":  message,
         "hasImage": record.GetString("image_hash") != "",
-        "created": record.GetDateTime("created"),
-        "updated": record.GetDateTime("updated"),
+        "version":  newVersion,
+        "created":  record.GetDateTime("created"),
+        "updated":  record.GetDateTime("updated"),
     })
+}
+
+// extractCurrentVersion extracts the current version number from a version conflict error
+func extractCurrentVersion(err error) int {
+    re := regexp.MustCompile(`current (\d+)`)
+    matches := re.FindStringSubmatch(err.Error())
+    if len(matches) > 1 {
+        v, _ := strconv.Atoi(matches[1])
+        return v
+    }
+    return 0
 }

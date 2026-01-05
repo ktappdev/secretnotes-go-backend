@@ -16,12 +16,16 @@ import (
 // Note represents a secret note
 type Note struct {
 	ID        string    `json:"id"`
-    Phrase    string    `json:"phrase"`    // Encrypted identifier
+	Phrase    string    `json:"phrase"`    // Encrypted identifier
 	Message   string    `json:"message"`   // Encrypted note content
 	ImageHash string    `json:"image_hash"` // Hash for encrypted image lookup
+	Version   int       `json:"version"`   // Optimistic locking version
 	Created   time.Time `json:"created"`
 	Updated   time.Time `json:"updated"`
 }
+
+// ErrVersionConflict is returned when optimistic locking detects a conflict
+var ErrVersionConflict = fmt.Errorf("version_conflict")
 
 // NoteService handles note operations
 type NoteService struct {
@@ -77,11 +81,17 @@ func (n *NoteService) GetOrCreateNote(phrase string) (*Note, error) {
 			}
 		}
 
+		version := int(record.GetInt("version"))
+		if version == 0 {
+			version = 1
+		}
+
 		return &Note{
 			ID:        record.Id,
-			Phrase:    phraseHash, // Store hash, not original phrase
+			Phrase:    phraseHash,
 			Message:   message,
 			ImageHash: record.GetString("image_hash"),
+			Version:   version,
 			Created:   record.GetDateTime("created").Time(),
 			Updated:   record.GetDateTime("updated").Time(),
 		}, nil
@@ -103,6 +113,7 @@ func (n *NoteService) GetOrCreateNote(phrase string) (*Note, error) {
 	}
 
 	record.Set("message", base64.StdEncoding.EncodeToString(encryptedMessage))
+	record.Set("version", 1)
 
 	if err := n.App.Save(record); err != nil {
 		return nil, fmt.Errorf("failed to create note: %w", err)
@@ -113,13 +124,20 @@ func (n *NoteService) GetOrCreateNote(phrase string) (*Note, error) {
 		Phrase:    phraseHash,
 		Message:   "",
 		ImageHash: "",
+		Version:   1,
 		Created:   record.GetDateTime("created").Time(),
 		Updated:   record.GetDateTime("updated").Time(),
 	}, nil
 }
 
-// UpdateNote updates an existing note
-func (n *NoteService) UpdateNote(phrase, message string) (*Note, error) {
+// VersionConflictInfo contains details about a version conflict
+type VersionConflictInfo struct {
+	CurrentVersion int
+}
+
+// UpdateNote updates an existing note with optional optimistic locking
+// If expectedVersion is provided (> 0), it will check for conflicts
+func (n *NoteService) UpdateNote(phrase, message string, expectedVersion ...int) (*Note, error) {
 	// Validate phrase length
 	if len(phrase) < 3 {
 		return nil, fmt.Errorf("phrase must be at least 3 characters long")
@@ -136,14 +154,28 @@ func (n *NoteService) UpdateNote(phrase, message string) (*Note, error) {
 
 	record := records[0]
 
+	// Check version if provided (optimistic locking)
+	currentVersion := int(record.GetInt("version"))
+	if currentVersion == 0 {
+		currentVersion = 1
+	}
+
+	if len(expectedVersion) > 0 && expectedVersion[0] > 0 {
+		if expectedVersion[0] != currentVersion {
+			return nil, fmt.Errorf("%w: expected %d, current %d", ErrVersionConflict, expectedVersion[0], currentVersion)
+		}
+	}
+
 	// Encrypt the message (encode as base64 to prevent corruption)
 	encryptedMessage, err := n.Encryption.EncryptData([]byte(message), phrase)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt message: %w", err)
 	}
 
-	// Update the record
+	// Update the record and increment version
+	newVersion := currentVersion + 1
 	record.Set("message", base64.StdEncoding.EncodeToString(encryptedMessage))
+	record.Set("version", newVersion)
 
 	if err := n.App.Save(record); err != nil {
 		return nil, fmt.Errorf("failed to update note: %w", err)
@@ -152,8 +184,9 @@ func (n *NoteService) UpdateNote(phrase, message string) (*Note, error) {
 	return &Note{
 		ID:        record.Id,
 		Phrase:    phraseHash,
-		Message:   message, // Return unencrypted message
+		Message:   message,
 		ImageHash: record.GetString("image_hash"),
+		Version:   newVersion,
 		Created:   record.GetDateTime("created").Time(),
 		Updated:   record.GetDateTime("updated").Time(),
 	}, nil
