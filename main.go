@@ -14,6 +14,7 @@ import (
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 	"github.com/pocketbase/dbx"
 	_ "github.com/ktappdev/secretnotes-go-backend/migrations"
 	"github.com/ktappdev/secretnotes-go-backend/services"
@@ -21,6 +22,8 @@ import (
 
 func main() {
 	app := pocketbase.New()
+
+	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{})
 	
 	// Respect CLI args; default to serving on 127.0.0.1:8091 when no args provided
 	if len(os.Args) <= 1 {
