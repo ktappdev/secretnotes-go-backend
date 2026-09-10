@@ -62,3 +62,6 @@ secretnotes
 CLAUDE.md
 secretnotes-go-backend
 ./secretnotes-go-backend
+
+# Agent tooling
+.picode/
