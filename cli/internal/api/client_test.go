@@ -77,3 +77,41 @@ func TestMissingNoteDoesNotAttemptLegacyRecovery(t *testing.T) {
 		t.Fatalf("expected one v2 request, got %d", requests)
 	}
 }
+
+func TestRecoveryVerifiesExistingNoteAfterDuplicateImport(t *testing.T) {
+	passphrase := []byte("legacy-title")
+	keys, err := e2ee.DeriveKeys(passphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer keys.Clear()
+	ciphertext, err := e2ee.Encrypt([]byte("Legacy note ✓"), keys.Note, notePurpose)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch {
+		case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/v2/recovery"):
+			_, _ = io.WriteString(writer, `{"ciphertext":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxGmIL2lY1UoeIkAaBVXHhs7VSire+lfPJLo5HrYTaU=","hasImage":false}`)
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/v2/import"):
+			http.Error(writer, `{"error":"Note already exists"}`, http.StatusConflict)
+		case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/v2/notes"):
+			_ = json.NewEncoder(writer).Encode(encryptedNote{ID: "existing", Ciphertext: ciphertext, Version: 1})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, false)
+	defer client.Close()
+	note, err := client.RecoverNote(context.Background(), passphrase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note.ID != "existing" || note.Message != "Legacy note ✓" {
+		t.Fatalf("unexpected recovered note: %#v", note)
+	}
+}

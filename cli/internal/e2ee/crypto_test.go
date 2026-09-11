@@ -2,6 +2,7 @@ package e2ee
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"testing"
 )
 
@@ -22,6 +23,11 @@ func TestSharedTypeScriptVectors(t *testing.T) {
 	if string(plaintext) != "Legacy note ✓" {
 		t.Fatalf("legacy vector mismatch: %q", plaintext)
 	}
+	crossClient := `{"v":2,"n":"AAECAwQFBgcICQoL","c":"raCDT_nEhRPY1BNd2diOtRRKm_PtaHwZ0wJ4EUO9yAMuoHx2BQ"}`
+	decrypted, err := Decrypt(crossClient, keys.Note, "secretnotez:v2:note")
+	if err != nil || string(decrypted) != "Cross-client note ✓" {
+		t.Fatalf("TypeScript ciphertext vector mismatch: %q, %v", decrypted, err)
+	}
 }
 
 func TestEncryptionRejectsWrongKeyAndTampering(t *testing.T) {
@@ -35,6 +41,20 @@ func TestEncryptionRejectsWrongKeyAndTampering(t *testing.T) {
 	}
 	if _, err := Decrypt(encoded, second.Note, "secretnotez:v2:note"); err == nil {
 		t.Fatal("wrong key was accepted")
+	}
+	var value envelope
+	if err := json.Unmarshal([]byte(encoded), &value); err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := base64.RawURLEncoding.DecodeString(value.Ciphertext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext[0] ^= 1
+	value.Ciphertext = base64.RawURLEncoding.EncodeToString(ciphertext)
+	tampered, _ := json.Marshal(value)
+	if _, err := Decrypt(string(tampered), first.Note, "secretnotez:v2:note"); err == nil {
+		t.Fatal("tampered ciphertext was accepted")
 	}
 	raw, _ := base64.RawURLEncoding.DecodeString(first.LookupHeader())
 	raw[0] ^= 1

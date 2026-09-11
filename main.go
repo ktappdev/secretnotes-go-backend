@@ -23,6 +23,9 @@ func main() {
 	app := pocketbase.New()
 
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{})
+	encryptionService := services.NewEncryptionService()
+	noteService := services.NewNoteService(app, encryptionService)
+	fileService := services.NewFileService(app, encryptionService)
 
 	// Respect CLI args; default to serving on 127.0.0.1:8091 when no args provided
 	if len(os.Args) <= 1 {
@@ -41,14 +44,7 @@ func main() {
 			})
 		})
 		registerV2Routes(api, app)
-
-		api.GET("/notes", upgradeRequired)
-		api.POST("/notes", upgradeRequired)
-		api.PUT("/notes", upgradeRequired)
-		api.PATCH("/notes", upgradeRequired)
-		api.GET("/notes/image", upgradeRequired)
-		api.POST("/notes/image", upgradeRequired)
-		api.DELETE("/notes/image", upgradeRequired)
+		registerLegacyV1Routes(api, noteService, fileService)
 
 		return se.Next()
 	})

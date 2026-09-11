@@ -17,7 +17,10 @@ import (
 	"github.com/ktappdev/secretnotes-go-backend/cli/internal/e2ee"
 )
 
-var ErrNoteNotFound = errors.New("encrypted note not found")
+var (
+	ErrNoteNotFound      = errors.New("encrypted note not found")
+	ErrNoteAlreadyExists = errors.New("encrypted note already exists")
+)
 
 const (
 	notePurpose     = "secretnotez:v2:note"
@@ -118,7 +121,10 @@ func (c *Client) CreateNote(ctx context.Context, passphrase []byte) (*Note, erro
 	if err != nil {
 		return nil, err
 	}
-	encrypted, err := c.putEncryptedNote(ctx, keys, ciphertext, 0)
+	encrypted, err := c.postEncryptedNote(ctx, keys, ciphertext)
+	if errors.Is(err, ErrNoteAlreadyExists) {
+		encrypted, err = c.getEncryptedNote(ctx, keys)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +197,7 @@ func (c *Client) RecoverNote(ctx context.Context, passphrase []byte) (*Note, err
 		}
 	}
 	imported, err := c.importNote(ctx, keys, ciphertext, image, metadata)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNoteAlreadyExists) {
 		return nil, err
 	}
 	verified, err := c.getEncryptedNote(ctx, keys)
@@ -202,7 +208,7 @@ func (c *Client) RecoverNote(ctx context.Context, passphrase []byte) (*Note, err
 	if err != nil {
 		return nil, err
 	}
-	if note.ID != imported.ID || note.Message != string(message) || note.HasImage != legacy.HasImage {
+	if (imported != nil && note.ID != imported.ID) || note.Message != string(message) || note.HasImage != legacy.HasImage {
 		return nil, errors.New("recovered note verification failed")
 	}
 	if legacy.HasImage {
@@ -292,6 +298,32 @@ func (c *Client) putEncryptedNote(ctx context.Context, keys *e2ee.Keys, cipherte
 	return decodeEncryptedNote(res.Body)
 }
 
+func (c *Client) postEncryptedNote(ctx context.Context, keys *e2ee.Keys, ciphertext string) (*encryptedNote, error) {
+	body, err := json.Marshal(struct {
+		Ciphertext string `json:"ciphertext"`
+	}{ciphertext})
+	if err != nil {
+		return nil, err
+	}
+	req, err := c.request(ctx, http.MethodPost, "/api/secretnotes/v2/notes", bytes.NewReader(body), keys.LookupHeader())
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := c.hc.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusConflict {
+		return nil, ErrNoteAlreadyExists
+	}
+	if res.StatusCode != http.StatusCreated {
+		return nil, responseError("create note", res)
+	}
+	return decodeEncryptedNote(res.Body)
+}
+
 func (c *Client) getLegacyNote(ctx context.Context, hash string) (*legacyNote, error) {
 	req, err := c.request(ctx, http.MethodGet, "/api/secretnotes/v2/recovery", nil, "")
 	if err != nil {
@@ -368,6 +400,9 @@ func (c *Client) importNote(ctx context.Context, keys *e2ee.Keys, ciphertext str
 		return nil, err
 	}
 	defer res.Body.Close()
+	if res.StatusCode == http.StatusConflict {
+		return nil, ErrNoteAlreadyExists
+	}
 	if res.StatusCode != http.StatusCreated {
 		return nil, responseError("import note", res)
 	}

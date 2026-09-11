@@ -16,10 +16,21 @@ Secret Notes operates on a simple but powerful principle: **Your passphrase is y
 
 1.  **You Choose a Passphrase**: This can be anything—a word, a sentence, or a random string.
 2.  **Your Client Encrypts Your Data**: The web, mobile, and CLI clients derive separate lookup, note, image, and metadata keys locally.
-3.  **The Server Stores Only Ciphertext**: The API receives a one-way lookup token and authenticated ciphertext—not the passphrase, encryption keys, note, image, filename, or media type.
+3.  **The Server Stores Only Ciphertext**: The v2 API receives a one-way lookup token and authenticated ciphertext—not the passphrase, encryption keys, note, image, filename, or media type.
 4.  **Keys Stay on the Device**: Keys are held in memory for the active note and discarded when you switch notes.
 
 When you open a note, the server returns ciphertext unchanged and the client decrypts it locally.
+
+## Safe production rollout
+
+Do not release either half of the v2 change by itself. Use this order:
+
+1. Back up `pb_data` and external image storage, then verify that the backup can be read.
+2. Deploy the backend and its `notes_v2` migration. The v2 API becomes available while legacy v1 clients temporarily continue to work.
+3. Release the updated web, mobile, and CLI clients. Updated clients never fall back to sending a plaintext passphrase.
+4. After client adoption is confirmed, set `SECRETNOTEZ_V1_MODE=disabled` and restart the backend. Legacy routes then return HTTP 426.
+
+The temporary v1 compatibility window closes automatically at `2026-12-31T23:59:59Z`. Override it with the RFC3339 environment variable `SECRETNOTEZ_V1_DEADLINE` only to shorten the transition. Legacy recovery closes at `2027-03-31T23:59:59Z`; `SECRETNOTEZ_RECOVERY_DEADLINE` can shorten that window. Recovery exposes a deterministic legacy lookup oracle, so it must not remain enabled indefinitely.
 
 ## 🔐 How Secure Is Your Data?
 

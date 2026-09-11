@@ -44,7 +44,7 @@ func init() {
 			Name:      "image_file",
 			MaxSize:   15 << 20,
 			MaxSelect: 1,
-			MimeTypes: []string{"application/octet-stream"},
+			MimeTypes: []string{"application/octet-stream", "application/json"},
 			Protected: true,
 		})
 		notes.Fields.Add(&core.TextField{

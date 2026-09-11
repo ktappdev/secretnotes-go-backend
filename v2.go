@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/filesystem"
 	"github.com/pocketbase/pocketbase/tools/router"
@@ -25,20 +24,22 @@ import (
 )
 
 const (
-	v2Collection       = "notes_v2"
-	v2TokenHeader      = "X-Lookup-Token"
-	v2RealtimePrefix   = "secretnotez:v2:"
-	v2MaxJSONBody      = 400_000
-	v2MaxImageBytes    = 15 << 20
-	v2MaxMultipartBody = 16 << 20
-	v2MaxCiphertext    = 300_000
-	v2MaxMetadata      = 20_000
-	legacyHashHeader   = "X-Legacy-Lookup-Hash"
-	legacyHashPattern  = "^[a-f0-9]{64}$"
+	v2Collection            = "notes_v2"
+	v2TokenHeader           = "X-Lookup-Token"
+	v2RealtimePrefix        = "secretnotez:v2:"
+	v2MaxJSONBody           = 400_000
+	v2MaxImageBytes         = 15 << 20
+	v2MaxMultipartBody      = 16 << 20
+	v2MaxCiphertext         = 300_000
+	v2MaxMetadata           = 20_000
+	legacyHashHeader        = "X-Legacy-Lookup-Hash"
+	legacyHashPattern       = "^[a-f0-9]{64}$"
+	defaultRecoveryDeadline = "2027-03-31T23:59:59Z"
 )
 
 var (
 	errV2Conflict = errors.New("version conflict")
+	errV2NotFound = errors.New("encrypted note not found")
 	hexHashRE     = regexp.MustCompile(legacyHashPattern)
 )
 
@@ -100,7 +101,7 @@ func (l *fixedWindowLimiter) allow(key string) bool {
 	return true
 }
 
-func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app *pocketbase.PocketBase) {
+func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app core.App) {
 	generalLimiter := newFixedWindowLimiter(120, time.Minute)
 	recoveryLimiter := newFixedWindowLimiter(10, time.Minute)
 
@@ -123,6 +124,55 @@ func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app *pocketba
 		return e.JSON(http.StatusOK, v2Response(record))
 	})
 
+	api.POST("/v2/notes", func(e *core.RequestEvent) error {
+		preparePrivateResponse(e)
+		if !generalLimiter.allow(e.RealIP()) {
+			return rateLimited(e)
+		}
+		lookupHash, err := v2LookupHash(e)
+		if err != nil {
+			return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+		data := struct {
+			Ciphertext string `json:"ciphertext"`
+		}{}
+		if err := bindLimitedJSON(e, &data); err != nil || !validV2Envelope(data.Ciphertext, v2MaxCiphertext) {
+			return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid encrypted note"})
+		}
+
+		var saved *core.Record
+		err = e.App.RunInTransaction(func(txApp core.App) error {
+			existing, findErr := findV2Note(txApp, lookupHash)
+			if findErr != nil {
+				return findErr
+			}
+			if existing != nil {
+				return errV2Conflict
+			}
+			collection, collectionErr := txApp.FindCollectionByNameOrId(v2Collection)
+			if collectionErr != nil {
+				return collectionErr
+			}
+			record := core.NewRecord(collection)
+			record.Set("lookup_hash", lookupHash)
+			record.Set("ciphertext", data.Ciphertext)
+			record.Set("version", 1)
+			if saveErr := txApp.Save(record); saveErr != nil {
+				return saveErr
+			}
+			saved = record
+			return nil
+		})
+		if err != nil {
+			if errors.Is(err, errV2Conflict) {
+				return e.JSON(http.StatusConflict, map[string]string{"error": "Note already exists"})
+			}
+			return e.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create note"})
+		}
+		publishV2Update(app, lookupHash, saved)
+		return e.JSON(http.StatusCreated, v2Response(saved))
+	})
+
 	api.PUT("/v2/notes", func(e *core.RequestEvent) error {
 		preparePrivateResponse(e)
 		if !generalLimiter.allow(e.RealIP()) {
@@ -135,34 +185,26 @@ func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app *pocketba
 		data := struct {
 			Ciphertext string `json:"ciphertext"`
 			Version    int    `json:"version"`
+			Force      bool   `json:"force"`
 		}{}
 		if err := bindLimitedJSON(e, &data); err != nil || !validV2Envelope(data.Ciphertext, v2MaxCiphertext) {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid encrypted note"})
 		}
 
 		var saved *core.Record
-		created := false
 		err = e.App.RunInTransaction(func(txApp core.App) error {
 			record, findErr := findV2Note(txApp, lookupHash)
 			if findErr != nil {
 				return findErr
 			}
 			if record == nil {
-				created = true
-				collection, collectionErr := txApp.FindCollectionByNameOrId(v2Collection)
-				if collectionErr != nil {
-					return collectionErr
-				}
-				record = core.NewRecord(collection)
-				record.Set("lookup_hash", lookupHash)
-				record.Set("version", 1)
-			} else {
-				current := int(record.GetInt("version"))
-				if data.Version > 0 && data.Version != current {
-					return fmt.Errorf("%w:%d", errV2Conflict, current)
-				}
-				record.Set("version", current+1)
+				return errV2NotFound
 			}
+			current := int(record.GetInt("version"))
+			if !data.Force && (data.Version <= 0 || data.Version != current) {
+				return fmt.Errorf("%w:%d", errV2Conflict, current)
+			}
+			record.Set("version", current+1)
 			record.Set("ciphertext", data.Ciphertext)
 			if saveErr := txApp.Save(record); saveErr != nil {
 				return saveErr
@@ -171,6 +213,9 @@ func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app *pocketba
 			return nil
 		})
 		if err != nil {
+			if errors.Is(err, errV2NotFound) {
+				return e.JSON(http.StatusNotFound, map[string]string{"error": "Note not found"})
+			}
 			if errors.Is(err, errV2Conflict) {
 				parts := strings.Split(err.Error(), ":")
 				current, _ := strconv.Atoi(parts[len(parts)-1])
@@ -179,11 +224,7 @@ func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app *pocketba
 			return e.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to save note"})
 		}
 		publishV2Update(app, lookupHash, saved)
-		status := http.StatusOK
-		if created {
-			status = http.StatusCreated
-		}
-		return e.JSON(status, v2Response(saved))
+		return e.JSON(http.StatusOK, v2Response(saved))
 	})
 
 	api.POST("/v2/import", func(e *core.RequestEvent) error {
@@ -268,9 +309,9 @@ func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app *pocketba
 		if err := parseLimitedMultipart(e); err != nil {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid encrypted image"})
 		}
-		metadata := e.Request.FormValue("metadata")
+		metadata := e.Request.FormValue("image_metadata")
 		version, _ := strconv.Atoi(e.Request.FormValue("version"))
-		if !validV2Envelope(metadata, v2MaxMetadata) {
+		if version <= 0 || !validV2Envelope(metadata, v2MaxMetadata) {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid encrypted image metadata"})
 		}
 		file, _, err := e.Request.FormFile("image")
@@ -290,11 +331,14 @@ func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app *pocketba
 		var saved *core.Record
 		err = e.App.RunInTransaction(func(txApp core.App) error {
 			record, findErr := findV2Note(txApp, lookupHash)
-			if findErr != nil || record == nil {
-				return fmt.Errorf("note not found")
+			if findErr != nil {
+				return findErr
+			}
+			if record == nil {
+				return errV2NotFound
 			}
 			current := int(record.GetInt("version"))
-			if version > 0 && version != current {
+			if version != current {
 				return fmt.Errorf("%w:%d", errV2Conflict, current)
 			}
 			record.Set("image_file", stored)
@@ -310,7 +354,10 @@ func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app *pocketba
 			if errors.Is(err, errV2Conflict) {
 				return e.JSON(http.StatusConflict, map[string]string{"error": "version_conflict"})
 			}
-			return e.JSON(http.StatusNotFound, map[string]string{"error": "Note not found"})
+			if errors.Is(err, errV2NotFound) {
+				return e.JSON(http.StatusNotFound, map[string]string{"error": "Note not found"})
+			}
+			return e.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to save encrypted image"})
 		}
 		publishV2Update(app, lookupHash, saved)
 		return e.JSON(http.StatusOK, v2Response(saved))
@@ -344,17 +391,20 @@ func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app *pocketba
 		data := struct {
 			Version int `json:"version"`
 		}{}
-		if err := bindLimitedJSON(e, &data); err != nil {
+		if err := bindLimitedJSON(e, &data); err != nil || data.Version <= 0 {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 		}
 		var saved *core.Record
 		err = e.App.RunInTransaction(func(txApp core.App) error {
 			record, findErr := findV2Note(txApp, lookupHash)
-			if findErr != nil || record == nil {
-				return fmt.Errorf("note not found")
+			if findErr != nil {
+				return findErr
+			}
+			if record == nil {
+				return errV2NotFound
 			}
 			current := int(record.GetInt("version"))
-			if data.Version > 0 && data.Version != current {
+			if data.Version != current {
 				return fmt.Errorf("%w:%d", errV2Conflict, current)
 			}
 			record.Set("image_file", "")
@@ -370,7 +420,10 @@ func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app *pocketba
 			if errors.Is(err, errV2Conflict) {
 				return e.JSON(http.StatusConflict, map[string]string{"error": "version_conflict"})
 			}
-			return e.JSON(http.StatusNotFound, map[string]string{"error": "Note not found"})
+			if errors.Is(err, errV2NotFound) {
+				return e.JSON(http.StatusNotFound, map[string]string{"error": "Note not found"})
+			}
+			return e.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to delete encrypted image"})
 		}
 		publishV2Update(app, lookupHash, saved)
 		return e.JSON(http.StatusOK, v2Response(saved))
@@ -378,6 +431,9 @@ func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app *pocketba
 
 	api.GET("/v2/recovery", func(e *core.RequestEvent) error {
 		preparePrivateResponse(e)
+		if !legacyRecoveryAvailable(time.Now().UTC()) {
+			return recoveryExpired(e)
+		}
 		if !recoveryLimiter.allow(e.RealIP()) {
 			return rateLimited(e)
 		}
@@ -398,6 +454,9 @@ func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app *pocketba
 
 	api.GET("/v2/recovery/image", func(e *core.RequestEvent) error {
 		preparePrivateResponse(e)
+		if !legacyRecoveryAvailable(time.Now().UTC()) {
+			return recoveryExpired(e)
+		}
 		if !recoveryLimiter.allow(e.RealIP()) {
 			return rateLimited(e)
 		}
@@ -415,18 +474,22 @@ func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app *pocketba
 
 	app.OnRealtimeSubscribeRequest().BindFunc(func(e *core.RealtimeSubscribeRequestEvent) error {
 		for _, rawSubscription := range e.Subscriptions {
-			u, err := url.Parse(rawSubscription)
-			if err != nil || !strings.HasPrefix(u.Path, v2RealtimePrefix) {
+			topic, rawQuery, _ := strings.Cut(rawSubscription, "?")
+			if !strings.HasPrefix(topic, v2RealtimePrefix) {
 				continue
 			}
-			lookupHash := strings.TrimPrefix(u.Path, v2RealtimePrefix)
+			lookupHash := strings.TrimPrefix(topic, v2RealtimePrefix)
 			if !hexHashRE.MatchString(lookupHash) {
+				return e.ForbiddenError("Invalid encrypted note subscription", nil)
+			}
+			query, err := url.ParseQuery(rawQuery)
+			if err != nil {
 				return e.ForbiddenError("Invalid encrypted note subscription", nil)
 			}
 			options := struct {
 				Headers map[string]any `json:"headers"`
 			}{}
-			if err := json.Unmarshal([]byte(u.Query().Get("options")), &options); err != nil {
+			if err := json.Unmarshal([]byte(query.Get("options")), &options); err != nil {
 				return e.ForbiddenError("Encrypted note subscription requires a lookup token", nil)
 			}
 			var token string
@@ -462,6 +525,7 @@ func preparePrivateResponse(e *core.RequestEvent) {
 	e.Response.Header().Set("Cache-Control", "no-store, max-age=0")
 	e.Response.Header().Set("Pragma", "no-cache")
 	e.Response.Header().Set("X-Content-Type-Options", "nosniff")
+	e.Response.Header().Set("Access-Control-Expose-Headers", "X-Encrypted-Metadata, X-Legacy-Content-Type")
 }
 
 func rateLimited(e *core.RequestEvent) error {
@@ -552,7 +616,7 @@ func writeRecordFile(e *core.RequestEvent, record *core.Record, fieldName, metad
 	return err
 }
 
-func publishV2Update(app *pocketbase.PocketBase, lookupHash string, record *core.Record) {
+func publishV2Update(app core.App, lookupHash string, record *core.Record) {
 	topic := v2RealtimePrefix + lookupHash
 	payload, err := json.Marshal(map[string]any{
 		"id":      record.Id,
@@ -564,13 +628,24 @@ func publishV2Update(app *pocketbase.PocketBase, lookupHash string, record *core
 	}
 	for _, client := range app.SubscriptionsBroker().Clients() {
 		for subscription := range client.Subscriptions(topic) {
-			u, parseErr := url.Parse(subscription)
-			if parseErr == nil && u.Path == topic {
+			subscribedTopic, _, _ := strings.Cut(subscription, "?")
+			if subscribedTopic == topic {
 				client.Send(subscriptions.Message{Name: topic, Data: payload})
 				break
 			}
 		}
 	}
+}
+
+func legacyRecoveryAvailable(now time.Time) bool {
+	return beforeConfiguredDeadline(now, "SECRETNOTEZ_RECOVERY_DEADLINE", defaultRecoveryDeadline)
+}
+
+func recoveryExpired(e *core.RequestEvent) error {
+	return e.JSON(http.StatusGone, map[string]string{
+		"error": "Legacy note recovery is no longer available.",
+		"code":  "legacy_recovery_expired",
+	})
 }
 
 func upgradeRequired(e *core.RequestEvent) error {

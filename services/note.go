@@ -8,18 +8,18 @@ import (
 	"log"
 	"time"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/dbx"
 )
 
 // Note represents a secret note
 type Note struct {
 	ID        string    `json:"id"`
-	Phrase    string    `json:"phrase"`    // Encrypted identifier
-	Message   string    `json:"message"`   // Encrypted note content
+	Phrase    string    `json:"phrase"`     // Encrypted identifier
+	Message   string    `json:"message"`    // Encrypted note content
 	ImageHash string    `json:"image_hash"` // Hash for encrypted image lookup
-	Version   int       `json:"version"`   // Optimistic locking version
+	Version   int       `json:"version"`    // Optimistic locking version
 	Created   time.Time `json:"created"`
 	Updated   time.Time `json:"updated"`
 }
@@ -67,18 +67,13 @@ func (n *NoteService) GetOrCreateNote(phrase string) (*Note, error) {
 			// Decode from base64 first
 			encryptedMessage, err := base64.StdEncoding.DecodeString(encryptedMessageB64)
 			if err != nil {
-				// If decode fails, assume it's old format or plaintext
-				message = encryptedMessageB64
-			} else {
-				// Try to decrypt the message
-				decryptedBytes, err := n.Encryption.DecryptData(encryptedMessage, phrase)
-				if err != nil {
-					// If decryption fails, assume it's plaintext
-					message = encryptedMessageB64
-				} else {
-					message = string(decryptedBytes)
-				}
+				return nil, fmt.Errorf("legacy note ciphertext is malformed: %w", err)
 			}
+			decryptedBytes, err := n.Encryption.DecryptData(encryptedMessage, phrase)
+			if err != nil {
+				return nil, fmt.Errorf("legacy note ciphertext could not be authenticated: %w", err)
+			}
+			message = string(decryptedBytes)
 		}
 
 		version := int(record.GetInt("version"))

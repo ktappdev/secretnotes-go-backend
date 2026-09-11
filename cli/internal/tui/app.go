@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -47,10 +48,13 @@ type EditorApp struct {
 	savePref func(enabled bool, debounceMs int) error
 
 	// data
-	loaded     bool
-	initialErr error
-	missing    bool
-	version    int
+	loaded      bool
+	initialErr  error
+	missing     bool
+	version     int
+	session     uint64
+	saving      bool
+	pendingSave bool
 }
 
 func NewEditorApp(client *api.Client, passphrase []byte, serverName string, autosave bool, debounce time.Duration, savePref func(bool, int) error) *EditorApp {
@@ -127,6 +131,9 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.loaded = false
 				a.missing = false
 				a.version = 0
+				a.session++
+				a.saving = false
+				a.pendingSave = false
 				a.prompting = false
 				a.pin.Reset()
 				a.ta.Focus()
@@ -169,7 +176,7 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, nil
 		case "ctrl+s":
-			return a, a.saveCmd()
+			return a, a.startSave()
 		case "ctrl+p":
 			a.prompting = true
 			a.pin.SetValue("")
@@ -198,6 +205,9 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Quit
 		}
 	case loadedMsg:
+		if m.session != a.session {
+			return a, nil
+		}
 		if m.err != nil {
 			if errors.Is(m.err, api.ErrNoteNotFound) {
 				a.missing = true
@@ -224,20 +234,28 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.status = ""
 		return a, nil
 	case savedMsg:
+		if m.session != a.session {
+			return a, nil
+		}
+		a.saving = false
 		if m.err != nil {
 			a.connected = false
 			a.status = "Offline (save failed)"
-			return a, nil
+		} else {
+			a.connected = true
+			a.version = m.note.Version
+			a.lastSaved = time.Now()
+			a.status = fmt.Sprintf("Saved %s", a.lastSaved.Format("15:04:05"))
 		}
-		a.connected = true
-		a.version = m.note.Version
-		a.lastSaved = time.Now()
-		a.status = fmt.Sprintf("Saved %s", a.lastSaved.Format("15:04:05"))
+		if a.pendingSave {
+			a.pendingSave = false
+			return a, a.startSave()
+		}
 		return a, nil
 	case autoSaveMsg:
 		// Only save if token matches the latest sequence
 		if m.seq == a.seq {
-			return a, a.saveCmd()
+			return a, a.startSave()
 		}
 		return a, nil
 	}
@@ -308,48 +326,77 @@ func (a *EditorApp) View() string {
 // Messages and commands
 
 type loadedMsg struct {
-	note *api.Note
-	err  error
+	note    *api.Note
+	err     error
+	session uint64
 }
 type savedMsg struct {
-	note *api.Note
-	err  error
+	note    *api.Note
+	err     error
+	session uint64
 }
 type autoSaveMsg struct{ seq int }
 
 func (a *EditorApp) loadNoteCmd() tea.Cmd {
+	passphrase := bytes.Clone(a.pass)
+	session := a.session
 	return func() tea.Msg {
+		defer zero(passphrase)
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
-		note, err := a.client.GetNote(ctx, a.pass)
-		return loadedMsg{note: note, err: err}
+		note, err := a.client.GetNote(ctx, passphrase)
+		return loadedMsg{note: note, err: err, session: session}
 	}
 }
 
-func (a *EditorApp) saveCmd() tea.Cmd {
+func (a *EditorApp) startSave() tea.Cmd {
+	if !a.loaded || a.missing {
+		return nil
+	}
+	if a.saving {
+		a.pendingSave = true
+		return nil
+	}
+	a.saving = true
 	content := a.ta.Value()
+	version := a.version
+	passphrase := bytes.Clone(a.pass)
+	session := a.session
 	return func() tea.Msg {
+		defer zero(passphrase)
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
-		note, err := a.client.UpdateNote(ctx, a.pass, content, a.version)
-		return savedMsg{note: note, err: err}
+		note, err := a.client.UpdateNote(ctx, passphrase, content, version)
+		return savedMsg{note: note, err: err, session: session}
 	}
 }
 
 func (a *EditorApp) createNoteCmd() tea.Cmd {
+	passphrase := bytes.Clone(a.pass)
+	session := a.session
 	return func() tea.Msg {
+		defer zero(passphrase)
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
-		note, err := a.client.CreateNote(ctx, a.pass)
-		return loadedMsg{note: note, err: err}
+		note, err := a.client.CreateNote(ctx, passphrase)
+		return loadedMsg{note: note, err: err, session: session}
 	}
 }
 
 func (a *EditorApp) recoverNoteCmd() tea.Cmd {
+	passphrase := bytes.Clone(a.pass)
+	session := a.session
 	return func() tea.Msg {
+		defer zero(passphrase)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		note, err := a.client.RecoverNote(ctx, a.pass)
-		return loadedMsg{note: note, err: err}
+		note, err := a.client.RecoverNote(ctx, passphrase)
+		return loadedMsg{note: note, err: err, session: session}
+	}
+}
+
+func zero(value []byte) {
+	for index := range value {
+		value[index] = 0
 	}
 }
