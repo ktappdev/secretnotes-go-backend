@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,143 +11,44 @@ import (
 	"regexp"
 	"strconv"
 
+	_ "github.com/ktappdev/secretnotes-go-backend/migrations"
+	"github.com/ktappdev/secretnotes-go-backend/services"
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
-	"github.com/pocketbase/dbx"
-	_ "github.com/ktappdev/secretnotes-go-backend/migrations"
-	"github.com/ktappdev/secretnotes-go-backend/services"
 )
 
 func main() {
 	app := pocketbase.New()
 
 	migratecmd.MustRegister(app, app.RootCmd, migratecmd.Config{})
-	
+
 	// Respect CLI args; default to serving on 127.0.0.1:8091 when no args provided
 	if len(os.Args) <= 1 {
 		app.RootCmd.SetArgs([]string{"serve", "--http", "127.0.0.1:8091"})
 	}
-
-	// Initialize services
-	encryptionService := services.NewEncryptionService()
-	noteService := services.NewNoteService(app, encryptionService)
-	fileService := services.NewFileService(app, encryptionService)
 
 	// Register custom routes
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
 		// Create a route group for our API
 		api := se.Router.Group("/api/secretnotes")
 
-		// Health check endpoint
 		api.GET("/", func(e *core.RequestEvent) error {
 			return e.JSON(http.StatusOK, map[string]string{
 				"message": "Secret Notes API is live",
-				"version": "1.0.0",
+				"version": "2.0.0",
 			})
 		})
+		registerV2Routes(api, app)
 
-		// Get note using passphrase from header/body
-        api.GET("/notes", func(e *core.RequestEvent) error {
-            phrase, err := extractPassphrase(e, "")
-            if err != nil {
-                return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-            }
-            return handleGetOrCreateNote(e, phrase, noteService)
-        })
-
-        // Create note (same behavior as GET) using passphrase from header/body
-        api.POST("/notes", func(e *core.RequestEvent) error {
-            // We don't need message body here, just passphrase
-            // Try to read minimal body to allow passphrase in JSON if provided
-            data := struct{ Passphrase string `json:"passphrase"` }{}
-            _ = e.BindBody(&data)
-            phrase, err := extractPassphrase(e, data.Passphrase)
-            if err != nil {
-                return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-            }
-            return handleGetOrCreateNote(e, phrase, noteService)
-        })
-
-        // Update note using passphrase from header/body
-        api.PATCH("/notes", func(e *core.RequestEvent) error {
-            data := struct {
-                Passphrase string `json:"passphrase"`
-                Message    string `json:"message"`
-                Version    int    `json:"version"`
-            }{}
-            if err := e.BindBody(&data); err != nil {
-                return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
-            }
-            phrase, err := extractPassphrase(e, data.Passphrase)
-            if err != nil {
-                return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-            }
-            e.Request.Body = http.NoBody
-            note, svcErr := noteService.UpdateNote(phrase, data.Message, data.Version)
-            if svcErr != nil {
-                if errors.Is(svcErr, services.ErrVersionConflict) {
-                    currentVersion := extractCurrentVersion(svcErr)
-                    return e.JSON(http.StatusConflict, map[string]any{
-                        "error": "version_conflict",
-                        "currentVersion": currentVersion,
-                    })
-                }
-                return e.JSON(http.StatusNotFound, map[string]string{"error": svcErr.Error()})
-            }
-            return e.JSON(http.StatusOK, map[string]any{
-                "id": note.ID,
-                "message": note.Message,
-                "hasImage": note.ImageHash != "",
-                "version": note.Version,
-                "created": note.Created,
-                "updated": note.Updated,
-            })
-        })
-
-        // Upsert note using passphrase from header/body
-        api.PUT("/notes", func(e *core.RequestEvent) error {
-            data := struct {
-                Passphrase string `json:"passphrase"`
-                Message    string `json:"message"`
-                Version    int    `json:"version"`
-            }{}
-            if err := e.BindBody(&data); err != nil {
-                return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
-            }
-            phrase, err := extractPassphrase(e, data.Passphrase)
-            if err != nil {
-                return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-            }
-            return handleUpsertNoteWithMessage(e, phrase, data.Message, data.Version, noteService)
-        })
-
-        // Upload image for note using passphrase from header
-        api.POST("/notes/image", func(e *core.RequestEvent) error {
-            phrase, err := extractPassphrase(e, "")
-            if err != nil {
-                return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-            }
-            return handleUploadImage(e, phrase, noteService, fileService)
-        })
-
-        // Get image for note using passphrase from header
-        api.GET("/notes/image", func(e *core.RequestEvent) error {
-            phrase, err := extractPassphrase(e, "")
-            if err != nil {
-                return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-            }
-            return handleGetImage(e, phrase, fileService)
-        })
-
-        // Delete image for note using passphrase from header
-        api.DELETE("/notes/image", func(e *core.RequestEvent) error {
-            phrase, err := extractPassphrase(e, "")
-            if err != nil {
-                return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-            }
-            return handleDeleteImage(e, phrase, noteService, fileService)
-        })
+		api.GET("/notes", upgradeRequired)
+		api.POST("/notes", upgradeRequired)
+		api.PUT("/notes", upgradeRequired)
+		api.PATCH("/notes", upgradeRequired)
+		api.GET("/notes/image", upgradeRequired)
+		api.POST("/notes/image", upgradeRequired)
+		api.DELETE("/notes/image", upgradeRequired)
 
 		return se.Next()
 	})
@@ -162,7 +62,7 @@ func main() {
 func handleGetOrCreateNote(e *core.RequestEvent, phrase string, noteService *services.NoteService) error {
 	// Use the note service to get or create the note
 	note, err := noteService.GetOrCreateNote(phrase)
-	
+
 	if err != nil {
 		return e.JSON(http.StatusInternalServerError, map[string]string{
 			"error": err.Error(),
@@ -190,13 +90,13 @@ func handleUpdateNote(e *core.RequestEvent, phrase string, noteService *services
 	data := struct {
 		Message string `json:"message"`
 	}{}
-	
+
 	if err := e.BindBody(&data); err != nil {
 		return e.JSON(http.StatusBadRequest, map[string]string{
 			"error": "Invalid request body",
 		})
 	}
-	
+
 	// Use the note service to update the note
 	note, err := noteService.UpdateNote(phrase, data.Message)
 	if err != nil {
@@ -204,13 +104,13 @@ func handleUpdateNote(e *core.RequestEvent, phrase string, noteService *services
 			"error": err.Error(),
 		})
 	}
-	
+
 	return e.JSON(http.StatusOK, map[string]any{
-		"id": note.ID,
-		"message": note.Message,
+		"id":       note.ID,
+		"message":  note.Message,
 		"hasImage": note.ImageHash != "",
-		"created": note.Created,
-		"updated": note.Updated,
+		"created":  note.Created,
+		"updated":  note.Updated,
 	})
 }
 
@@ -222,14 +122,14 @@ func handleUploadImage(e *core.RequestEvent, phrase string, noteService *service
 			"error": err.Error(),
 		})
 	}
-	
+
 	// Parse multipart form
 	if err := e.Request.ParseMultipartForm(10 << 20); err != nil { // 10 MB max
 		return e.JSON(http.StatusBadRequest, map[string]string{
 			"error": "Failed to parse form",
 		})
 	}
-	
+
 	// Get uploaded file
 	file, header, err := e.Request.FormFile("image")
 	if err != nil {
@@ -238,7 +138,7 @@ func handleUploadImage(e *core.RequestEvent, phrase string, noteService *service
 		})
 	}
 	defer file.Close()
-	
+
 	// Use file service to store the encrypted file
 	fileHash, err := fileService.StoreEncryptedFile(phrase, file, header.Filename, header.Header.Get("Content-Type"))
 	if err != nil {
@@ -246,7 +146,7 @@ func handleUploadImage(e *core.RequestEvent, phrase string, noteService *service
 			"error": err.Error(),
 		})
 	}
-	
+
 	// Update note with image hash reference
 	if err := noteService.UpdateNoteImageHash(phrase, fileHash); err != nil {
 		return e.JSON(http.StatusInternalServerError, map[string]string{
@@ -277,13 +177,13 @@ func handleUploadImage(e *core.RequestEvent, phrase string, noteService *service
 	}
 
 	return e.JSON(http.StatusOK, map[string]any{
-		"message": "Image uploaded successfully",
-		"fileName": header.Filename,
-		"fileSize": header.Size,
+		"message":     "Image uploaded successfully",
+		"fileName":    header.Filename,
+		"fileSize":    header.Size,
 		"contentType": header.Header.Get("Content-Type"),
-		"fileHash": fileHash,
-		"created": createdVal,
-		"updated": updatedVal,
+		"fileHash":    fileHash,
+		"created":     createdVal,
+		"updated":     updatedVal,
 	})
 }
 
@@ -295,11 +195,11 @@ func handleGetImage(e *core.RequestEvent, phrase string, fileService *services.F
 			"error": err.Error(),
 		})
 	}
-	
+
 	// Set appropriate headers for file download
 	e.Response.Header().Set("Content-Type", contentType)
-	e.Response.Header().Set("Content-Disposition", "attachment; filename=\"" + filename + "\"")
-	
+	e.Response.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+
 	// Write the decrypted file directly to the response
 	_, err = e.Response.Write(decryptedData)
 	if err != nil {
@@ -307,7 +207,7 @@ func handleGetImage(e *core.RequestEvent, phrase string, fileService *services.F
 			"error": "Failed to send image",
 		})
 	}
-	
+
 	return nil
 }
 
@@ -319,10 +219,10 @@ func handleDeleteImage(e *core.RequestEvent, phrase string, noteService *service
 			"error": err.Error(),
 		})
 	}
-	
+
 	// TODO: Update note to remove image hash reference
 	// We need to add a method to NoteService for this
-	
+
 	return e.JSON(http.StatusOK, map[string]string{
 		"message": "Image deleted successfully",
 	})
@@ -332,14 +232,14 @@ func handleDeleteImage(e *core.RequestEvent, phrase string, noteService *service
 
 // extractPassphrase fetches the passphrase from X-Passphrase header or fallback string (e.g., bound body field).
 func extractPassphrase(e *core.RequestEvent, fallback string) (string, error) {
-    phrase := e.Request.Header.Get("X-Passphrase")
-    if phrase == "" {
-        phrase = fallback
-    }
-    if len(phrase) < 3 {
-        return "", fmt.Errorf("Passphrase must be at least 3 characters long")
-    }
-    return phrase, nil
+	phrase := e.Request.Header.Get("X-Passphrase")
+	if phrase == "" {
+		phrase = fallback
+	}
+	if len(phrase) < 3 {
+		return "", fmt.Errorf("Passphrase must be at least 3 characters long")
+	}
+	return phrase, nil
 }
 
 // hashPhrase creates a SHA-256 hash of the phrase for secure storage and lookup
@@ -357,101 +257,101 @@ func hashBytes(data []byte) string {
 // previewString returns a safe preview of the input limited to max characters.
 // If the input is shorter than max, the full string is returned. Otherwise, it appends an ellipsis.
 func previewString(s string, max int) string {
-    if max <= 0 {
-        return ""
-    }
-    if len(s) <= max {
-        return s
-    }
-    return s[:max] + "..."
+	if max <= 0 {
+		return ""
+	}
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }
 
 // handleUpsertNote creates or updates a note in a single call.
 // If a record for the phrase exists, it updates the message; otherwise it creates a new note with the message.
 // Supports optimistic locking via version parameter.
 func handleUpsertNoteWithMessage(e *core.RequestEvent, phrase string, message string, version int, noteService *services.NoteService) error {
-    app := e.App
-    encryptionService := services.NewEncryptionService()
+	app := e.App
+	encryptionService := services.NewEncryptionService()
 
-    phraseHash := hashPhrase(phrase)
+	phraseHash := hashPhrase(phrase)
 
-    // Try find existing
-    records, err := app.FindRecordsByFilter("notes", "phrase_hash = {:phrase_hash}", "", 1, 0, dbx.Params{"phrase_hash": phraseHash})
-    if err != nil {
-        return e.JSON(http.StatusInternalServerError, map[string]string{
-            "error": "Failed to query notes: " + err.Error(),
-        })
-    }
+	// Try find existing
+	records, err := app.FindRecordsByFilter("notes", "phrase_hash = {:phrase_hash}", "", 1, 0, dbx.Params{"phrase_hash": phraseHash})
+	if err != nil {
+		return e.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to query notes: " + err.Error(),
+		})
+	}
 
-    var record *core.Record
-    var newVersion int
-    isNew := len(records) == 0
+	var record *core.Record
+	var newVersion int
+	isNew := len(records) == 0
 
-    if !isNew {
-        record = records[0]
-        currentVersion := int(record.GetInt("version"))
-        if currentVersion == 0 {
-            currentVersion = 1
-        }
-        // Check version if provided (optimistic locking)
-        if version > 0 && version != currentVersion {
-            return e.JSON(http.StatusConflict, map[string]any{
-                "error":          "version_conflict",
-                "currentVersion": currentVersion,
-            })
-        }
-        newVersion = currentVersion + 1
-    } else {
-        // Create new record
-        collection, err := app.FindCollectionByNameOrId("notes")
-        if err != nil {
-            return e.JSON(http.StatusInternalServerError, map[string]string{
-                "error": "Notes collection not found: " + err.Error(),
-            })
-        }
-        record = core.NewRecord(collection)
-        record.Set("phrase_hash", phraseHash)
-        newVersion = 1
-    }
+	if !isNew {
+		record = records[0]
+		currentVersion := int(record.GetInt("version"))
+		if currentVersion == 0 {
+			currentVersion = 1
+		}
+		// Check version if provided (optimistic locking)
+		if version > 0 && version != currentVersion {
+			return e.JSON(http.StatusConflict, map[string]any{
+				"error":          "version_conflict",
+				"currentVersion": currentVersion,
+			})
+		}
+		newVersion = currentVersion + 1
+	} else {
+		// Create new record
+		collection, err := app.FindCollectionByNameOrId("notes")
+		if err != nil {
+			return e.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "Notes collection not found: " + err.Error(),
+			})
+		}
+		record = core.NewRecord(collection)
+		record.Set("phrase_hash", phraseHash)
+		newVersion = 1
+	}
 
-    // Encrypt and set message
-    encryptedMessage, err := encryptionService.EncryptData([]byte(message), phrase)
-    if err != nil {
-        return e.JSON(http.StatusInternalServerError, map[string]string{
-            "error": "Failed to encrypt message",
-        })
-    }
-    record.Set("message", base64.StdEncoding.EncodeToString(encryptedMessage))
-    record.Set("version", newVersion)
+	// Encrypt and set message
+	encryptedMessage, err := encryptionService.EncryptData([]byte(message), phrase)
+	if err != nil {
+		return e.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to encrypt message",
+		})
+	}
+	record.Set("message", base64.StdEncoding.EncodeToString(encryptedMessage))
+	record.Set("version", newVersion)
 
-    if err := app.Save(record); err != nil {
-        return e.JSON(http.StatusInternalServerError, map[string]string{
-            "error": "Failed to save note",
-        })
-    }
+	if err := app.Save(record); err != nil {
+		return e.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to save note",
+		})
+	}
 
-    status := http.StatusOK
-    if isNew {
-        status = http.StatusCreated
-    }
+	status := http.StatusOK
+	if isNew {
+		status = http.StatusCreated
+	}
 
-    return e.JSON(status, map[string]any{
-        "id":       record.Id,
-        "message":  message,
-        "hasImage": record.GetString("image_hash") != "",
-        "version":  newVersion,
-        "created":  record.GetDateTime("created"),
-        "updated":  record.GetDateTime("updated"),
-    })
+	return e.JSON(status, map[string]any{
+		"id":       record.Id,
+		"message":  message,
+		"hasImage": record.GetString("image_hash") != "",
+		"version":  newVersion,
+		"created":  record.GetDateTime("created"),
+		"updated":  record.GetDateTime("updated"),
+	})
 }
 
 // extractCurrentVersion extracts the current version number from a version conflict error
 func extractCurrentVersion(err error) int {
-    re := regexp.MustCompile(`current (\d+)`)
-    matches := re.FindStringSubmatch(err.Error())
-    if len(matches) > 1 {
-        v, _ := strconv.Atoi(matches[1])
-        return v
-    }
-    return 0
+	re := regexp.MustCompile(`current (\d+)`)
+	matches := re.FindStringSubmatch(err.Error())
+	if len(matches) > 1 {
+		v, _ := strconv.Atoi(matches[1])
+		return v
+	}
+	return 0
 }
