@@ -2,12 +2,13 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/atotto/clipboard"
-	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -15,39 +16,41 @@ import (
 )
 
 type EditorApp struct {
-	client      *api.Client
-	pass        []byte
-	serverName  string
+	client     *api.Client
+	pass       []byte
+	serverName string
 
 	// exit semantics
-	exitMode    string // "wipe" clears screen+scrollback; "clear" clears screen only
+	exitMode string // "wipe" clears screen+scrollback; "clear" clears screen only
 
 	// UI state
-	ta          textarea.Model
-	status      string
-	lastSaved   time.Time
-	autosave    bool
-	debounce    time.Duration
-	saveTimer   *time.Timer
-	seq         int // debounce sequence
+	ta        textarea.Model
+	status    string
+	lastSaved time.Time
+	autosave  bool
+	debounce  time.Duration
+	saveTimer *time.Timer
+	seq       int // debounce sequence
 
 	// Passphrase prompt
-	prompting   bool
-	pin         textinput.Model
+	prompting bool
+	pin       textinput.Model
 
 	// View modes
 	plainCopyMode bool
 	showAbout     bool
 
 	// connectivity
-	connected  bool
+	connected bool
 
 	// persistence
-	savePref    func(enabled bool, debounceMs int) error
+	savePref func(enabled bool, debounceMs int) error
 
 	// data
-	loaded      bool
-	initialErr  error
+	loaded     bool
+	initialErr error
+	missing    bool
+	version    int
 }
 
 func NewEditorApp(client *api.Client, passphrase []byte, serverName string, autosave bool, debounce time.Duration, savePref func(bool, int) error) *EditorApp {
@@ -117,8 +120,13 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return a, nil
 				}
 				// swap passphrase (best-effort zero existing buffer)
-				for i := range a.pass { a.pass[i] = 0 }
+				for i := range a.pass {
+					a.pass[i] = 0
+				}
 				a.pass = []byte(val)
+				a.loaded = false
+				a.missing = false
+				a.version = 0
 				a.prompting = false
 				a.pin.Reset()
 				a.ta.Focus()
@@ -135,6 +143,16 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		switch s {
+		case "c":
+			if a.missing {
+				a.status = "Creating encrypted note..."
+				return a, a.createNoteCmd()
+			}
+		case "r":
+			if a.missing {
+				a.status = "Recovering existing note locally..."
+				return a, a.recoverNoteCmd()
+			}
 		case "?":
 			a.showAbout = !a.showAbout
 			return a, nil
@@ -144,7 +162,11 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.savePref != nil {
 				_ = a.savePref(a.autosave, int(a.debounce/time.Millisecond))
 			}
-			if a.autosave { a.status = "Autosave: on" } else { a.status = "Autosave: off" }
+			if a.autosave {
+				a.status = "Autosave: on"
+			} else {
+				a.status = "Autosave: off"
+			}
 			return a, nil
 		case "ctrl+s":
 			return a, a.saveCmd()
@@ -155,7 +177,7 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.ta.Blur()
 			a.status = "Enter new passphrase and press Enter"
 			return a, nil
-case "ctrl+t":
+		case "ctrl+t":
 			a.plainCopyMode = !a.plainCopyMode
 			if a.plainCopyMode {
 				a.status = "Plain view: only your text is shown for easy copying"
@@ -175,8 +197,16 @@ case "ctrl+t":
 			a.exitMode = "clear"
 			return a, tea.Quit
 		}
-case loadedMsg:
+	case loadedMsg:
 		if m.err != nil {
+			if errors.Is(m.err, api.ErrNoteNotFound) {
+				a.missing = true
+				a.connected = true
+				a.loaded = false
+				a.status = "Choose: c create new • r recover existing"
+				a.ta.Blur()
+				return a, nil
+			}
 			a.initialErr = m.err
 			a.connected = false
 			a.ta.Placeholder = "Failed to load note (press Ctrl+Q to quit)"
@@ -184,19 +214,23 @@ case loadedMsg:
 			return a, nil
 		}
 		a.loaded = true
+		a.missing = false
 		a.connected = true
-	a.ta.SetValue(m.note.Message)
+		a.version = m.note.Version
+		a.ta.SetValue(m.note.Message)
+		a.ta.Focus()
 		a.ta.Placeholder = "Start typing your secure note..."
 		// Clear transient status to avoid duplicate "Connected" in footer
 		a.status = ""
 		return a, nil
-case savedMsg:
+	case savedMsg:
 		if m.err != nil {
 			a.connected = false
 			a.status = "Offline (save failed)"
 			return a, nil
 		}
 		a.connected = true
+		a.version = m.note.Version
 		a.lastSaved = time.Now()
 		a.status = fmt.Sprintf("Saved %s", a.lastSaved.Format("15:04:05"))
 		return a, nil
@@ -227,6 +261,11 @@ func (a *EditorApp) View() string {
 		// Show only the raw note content with no UI, borders, or line numbers.
 		return a.ta.Value()
 	}
+	if a.missing {
+		title := lipgloss.NewStyle().Bold(true).Render("No end-to-end encrypted note found")
+		body := "Press c to create a blank note.\nPress r to recover an existing note without sending your passphrase."
+		return lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).Padding(1, 2).Render(title + "\n\n" + body)
+	}
 	border := lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).Padding(0, 1)
 	conn := "Offline"
 	if a.connected {
@@ -252,7 +291,7 @@ func (a *EditorApp) View() string {
 			"Note: Not all terminals clear scrollback; for maximum privacy close your terminal or run with SN_WIPE_AGGRESSIVE=1."
 		warn := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).Render("Important: If you forget your passphrase, your note is permanently unrecoverable.")
 		modalBorder := lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).Padding(1, 2)
-		modal := modalBorder.Render(header+"\n"+sub+"\n\n"+body+"\n\n"+warn+"\n\nPress ? or Esc to close")
+		modal := modalBorder.Render(header + "\n" + sub + "\n\n" + body + "\n\n" + warn + "\n\nPress ? or Esc to close")
 		return base + "\n" + modal
 	}
 	if a.prompting {
@@ -260,7 +299,7 @@ func (a *EditorApp) View() string {
 		title := lipgloss.NewStyle().Bold(true).Render("Change passphrase")
 		prompt := "New passphrase: " + a.pin.View() + "\nPress Enter to load, Esc to cancel"
 		warn := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).Render("No recovery: If you forget your passphrase, nobody can recover your note.")
-		modal := modalBorder.Render(title+"\n"+prompt+"\n\n"+warn)
+		modal := modalBorder.Render(title + "\n" + prompt + "\n\n" + warn)
 		return base + "\n" + modal
 	}
 	return base
@@ -268,15 +307,21 @@ func (a *EditorApp) View() string {
 
 // Messages and commands
 
-type loadedMsg struct{ note *api.Note; err error }
-type savedMsg struct{ note *api.Note; err error }
+type loadedMsg struct {
+	note *api.Note
+	err  error
+}
+type savedMsg struct {
+	note *api.Note
+	err  error
+}
 type autoSaveMsg struct{ seq int }
 
 func (a *EditorApp) loadNoteCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
-		note, err := a.client.GetOrCreateNote(ctx, a.pass)
+		note, err := a.client.GetNote(ctx, a.pass)
 		return loadedMsg{note: note, err: err}
 	}
 }
@@ -286,7 +331,25 @@ func (a *EditorApp) saveCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
-		note, err := a.client.UpdateNote(ctx, a.pass, content)
+		note, err := a.client.UpdateNote(ctx, a.pass, content, a.version)
 		return savedMsg{note: note, err: err}
+	}
+}
+
+func (a *EditorApp) createNoteCmd() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		note, err := a.client.CreateNote(ctx, a.pass)
+		return loadedMsg{note: note, err: err}
+	}
+}
+
+func (a *EditorApp) recoverNoteCmd() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		note, err := a.client.RecoverNote(ctx, a.pass)
+		return loadedMsg{note: note, err: err}
 	}
 }

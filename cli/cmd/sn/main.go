@@ -146,6 +146,7 @@ func main() {
 
 	// Health check fast-fail
 	client := api.NewClient(server.URL, server.VerifyTLS)
+	defer client.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	if err := client.Health(ctx); err != nil {

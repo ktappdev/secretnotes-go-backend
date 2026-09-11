@@ -6,7 +6,7 @@ Concept
 
 - One passphrase → one note. Change the passphrase and you see a different note.
 - No list, no accounts. Just load, edit, and save your note.
-- Images exist in the backend but are intentionally omitted in this CLI v1 (text-only).
+- Image editing is intentionally omitted, but recovery preserves existing images.
 
 Keybindings
 
@@ -22,22 +22,21 @@ Features
 
 - First-run setup storing non-sensitive config in the user config directory
 - Passphrase prompt at start (never stored); in-app passphrase change (Ctrl+P)
-- Load note via GET /api/secretnotes/notes (creates if missing)
-- Save via PATCH /api/secretnotes/notes with {"message": "..."}
+- Encrypt and decrypt note text locally with the shared v2 protocol
+- Explicitly create a new note or recover a legacy note when no v2 note exists
+- Preserve legacy images during recovery without exposing them in the text UI
 - Autosave ON by default (1200ms debounce), toggleable in-app and persisted
 - Plain view toggle for clean selection/copy (Ctrl+T)
 - One-shot copy to clipboard (Ctrl+Y)
 
 Build
 
-- cd cli
-- go mod tidy
-- go build ./cmd/sn
+- From the repository root: `go build ./cli/cmd/sn`
 
 Run
 
 - ./sn
-- ./sn --url <https://pb.secretnotez.com> --autosave --autosave-debounce-ms 1200
+- ./sn --url https://pb.secretnotez.com --autosave --autosave-debounce-ms 1200
 - ./sn --insecure (only if using dev HTTPS with self-signed certs)
 
 Binaries from GitHub Releases
@@ -59,8 +58,8 @@ Cutting a release (automated)
 Install
 
 - Requirements: Go 1.22+
-- Local (from this repo):
-  - cd cli && go install ./cmd/sn
+- Local (from the repository root):
+  - `go install ./cli/cmd/sn`
 - From GitHub (always latest from main):
 
   ```bash
@@ -88,7 +87,7 @@ First run
 
 - You’ll be asked:
   - Server name (default: local)
-- Server URL (default: <https://pb.secretnotez.com>)
+  - Server URL (default: https://pb.secretnotez.com)
   - TLS verification (only for https)
   - Autosave and debounce settings
 - After setup, you’ll be prompted for your passphrase (masked). The note for that passphrase is loaded.
@@ -112,7 +111,9 @@ Config paths
 Security
 
 - Passphrase lives only in memory for the session and is zeroed on exit.
-- No passphrases in config or logs.
+- Notes are encrypted and decrypted locally; the server receives only a lookup token and ciphertext.
+- No passphrases, plaintext notes, filenames, or encryption keys are sent to the server or written to config.
+- Existing server-encrypted notes can be recovered explicitly and imported into v2 without sending the passphrase.
 - No recovery: If you forget your passphrase, your note is permanently unrecoverable.
 
 Privacy & exit behavior

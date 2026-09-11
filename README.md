@@ -15,19 +15,19 @@
 Secret Notes operates on a simple but powerful principle: **Your passphrase is your key.**
 
 1.  **You Choose a Passphrase**: This can be anything—a word, a sentence, or a random string.
-2.  **We Encrypt Your Data**: When you save a note, your passphrase is used to encrypt the content immediately.
-3.  **We Store Only the Lock**: We save the encrypted "lock" (your note) and a one-way fingerprint of your passphrase so we can find it later.
-4.  **We Forget the Key**: We **never** store your passphrase or the encryption keys. We discard them immediately after the operation is done.
+2.  **Your Client Encrypts Your Data**: The web, mobile, and CLI clients derive separate lookup, note, image, and metadata keys locally.
+3.  **The Server Stores Only Ciphertext**: The API receives a one-way lookup token and authenticated ciphertext—not the passphrase, encryption keys, note, image, filename, or media type.
+4.  **Keys Stay on the Device**: Keys are held in memory for the active note and discarded when you switch notes.
 
-When you want to read your note, you provide the passphrase again. We use it to unlock the note on the fly and send the content back to you.
+When you open a note, the server returns ciphertext unchanged and the client decrypts it locally.
 
 ## 🔐 How Secure Is Your Data?
 
-### **Your Data is Safe at Rest**
-If someone were to steal the database or hard drives, they would see only gibberish.
-- **No Stored Passwords**: We verify your identity using a secure hash (SHA-256), meaning we can't reverse-engineer your passphrase from our database.
-- **Strong Encryption**: We use **AES-256-GCM**, a military-grade encryption standard, to lock your files and text.
-- **Unique Keys**: Every single note and file is encrypted with a unique, randomly generated salt and nonce.
+### **Your Data Is End-to-End Encrypted**
+The server cannot decrypt v2 content. If someone obtained the database or image storage, they would see ciphertext and lookup hashes.
+- **Memory-hard derivation**: Clients use the frozen v2 scrypt parameters, then HKDF-SHA256 key separation.
+- **Authenticated encryption**: Notes and images use AES-256-GCM with fresh random nonces and purpose-bound authenticated data.
+- **Exact passphrases**: Case, whitespace, Unicode, and all other UTF-8 bytes are preserved.
 
 ### **What We Don't Do**
 - ❌ We don't store your real name, email, or IP address.
