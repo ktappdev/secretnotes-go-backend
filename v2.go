@@ -630,8 +630,10 @@ func publishV2Update(app core.App, lookupHash string, record *core.Record) {
 		for subscription := range client.Subscriptions(topic) {
 			subscribedTopic, _, _ := strings.Cut(subscription, "?")
 			if subscribedTopic == topic {
-				client.Send(subscriptions.Message{Name: topic, Data: payload})
-				break
+				// PocketBase's JS SDK registers its EventSource listener with the
+				// complete subscription string, including the options query. Keep
+				// that exact name on the SSE event so the listener can receive it.
+				client.Send(subscriptions.Message{Name: subscription, Data: payload})
 			}
 		}
 	}

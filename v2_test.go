@@ -184,11 +184,12 @@ func TestV2RealtimeSubscriptionRequiresMatchingToken(t *testing.T) {
 		t.Fatal("anonymous encrypted subscription was accepted")
 	}
 	options, _ := json.Marshal(map[string]any{"headers": map[string]any{v2TokenHeader: token}})
-	if err := trigger(topic + "?options=" + url.QueryEscape(string(options))); err != nil {
+	subscription := topic + "?options=" + url.QueryEscape(string(options))
+	if err := trigger(subscription); err != nil {
 		t.Fatalf("matching encrypted subscription was rejected: %v", err)
 	}
 	client := subscriptions.NewDefaultClient()
-	client.Subscribe(topic + "?options=" + url.QueryEscape(string(options)))
+	client.Subscribe(subscription)
 	app.SubscriptionsBroker().Register(client)
 	defer app.SubscriptionsBroker().Unregister(client.Id())
 	received := make(chan subscriptions.Message, 1)
@@ -198,7 +199,7 @@ func TestV2RealtimeSubscriptionRequiresMatchingToken(t *testing.T) {
 	publishV2Update(app, hex.EncodeToString(lookupSum[:]), record)
 	select {
 	case message := <-received:
-		if message.Name != topic || !strings.Contains(string(message.Data), `"version":1`) {
+		if message.Name != subscription || !strings.Contains(string(message.Data), `"version":1`) {
 			t.Fatalf("unexpected realtime message: %#v", message)
 		}
 	case <-time.After(time.Second):
