@@ -37,6 +37,7 @@ Run
 - ./sn
 - ./sn --url https://pb.secretnotez.com --autosave --autosave-debounce-ms 1200
 - ./sn --insecure (only if using dev HTTPS with self-signed certs)
+- ./sn --version (print version and exit)
 
 Binaries from GitHub Releases
 

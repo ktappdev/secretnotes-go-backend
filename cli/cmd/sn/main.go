@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -18,6 +19,10 @@ import (
 
 	"golang.org/x/term"
 )
+
+// version is injected at build time via -ldflags "-X main.version=...".
+// Empty means a from-source build; see displayVersion().
+var version = ""
 
 func main() {
 	// Flags (overrides)
@@ -29,6 +34,7 @@ func main() {
 		flagConfigPath  string
 		flagPrintURL    bool
 		flagResetConfig bool
+		flagVersion     bool
 	)
 	flag.StringVar(&flagURL, "url", "", "Server base URL (e.g., http://127.0.0.1:8091)")
 	flag.BoolVar(&flagInsecure, "insecure", false, "Skip TLS verification (https only)")
@@ -37,7 +43,14 @@ func main() {
 	flag.StringVar(&flagConfigPath, "config", "", "Path to config file (optional)")
 	flag.BoolVar(&flagPrintURL, "print-url", false, "Print the server base URL and exit")
 	flag.BoolVar(&flagResetConfig, "reset-config", false, "Delete config file and recreate with defaults")
+	flag.BoolVar(&flagVersion, "version", false, "Print version and exit")
 	flag.Parse()
+
+	// Handle version flag before any config/TTY/network work
+	if flagVersion {
+		fmt.Printf("sn %s\n", displayVersion())
+		return
+	}
 
 	// Handle reset-config flag
 	if flagResetConfig {
@@ -227,6 +240,39 @@ func zeroBytes(b []byte) {
 	for i := range b {
 		b[i] = 0
 	}
+}
+
+// displayVersion resolves the version string to report:
+// the ldflag-injected version if set, otherwise build info
+// (module version, or vcs revision + modified state) for
+// from-checkout builds.
+func displayVersion() string {
+	if version != "" {
+		return version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		return v
+	}
+	var rev, modified string
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			modified = s.Value
+		}
+	}
+	if len(rev) > 12 {
+		rev = rev[:12]
+	}
+	if rev != "" {
+		return fmt.Sprintf("devel (%s, modified=%s)", rev, modified)
+	}
+	return "devel"
 }
 
 // firstRunSetup asks minimal questions and populates config
