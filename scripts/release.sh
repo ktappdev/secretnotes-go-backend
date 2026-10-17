@@ -108,12 +108,3 @@ git push origin "$VERSION"
 
 echo -e "${GREEN}Done!${RESET} GitHub Actions will now build and publish release assets."
 echo -e "View releases: ${BLUE}https://github.com/$(git config --get remote.origin.url | sed -E 's#.*github.com[:/](.*)\.git#\1#')/releases${RESET}"
-
-# Optional: user's convenience command to stage, commit, and push
-# Only run if available in PATH
-if command -v gitcomm >/dev/null 2>&1; then
-  echo -e "${BLUE}Running user command:${RESET} gitcomm -sa -ap"
-  gitcomm -sa -ap || true
-else
-  echo -e "${YELLOW}Note:${RESET} 'gitcomm' not found; skipping convenience commit/push."
-fi
