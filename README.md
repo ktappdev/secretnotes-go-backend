@@ -27,10 +27,12 @@ Do not release either half of the v2 change by itself. Use this order:
 
 1. Back up `pb_data` and external image storage, then verify that the backup can be read.
 2. Deploy the backend and its `notes_v2` migration. The v2 API becomes available while legacy v1 clients temporarily continue to work.
-3. Release the updated web, mobile, and CLI clients. Updated clients never fall back to sending a plaintext passphrase.
+3. Release the updated web, mobile, and CLI clients. Updated clients never fall back to sending a plaintext passphrase. Once a passphrase has a v2 note, legacy note and image routes return HTTP 426 instead of reading or changing the old copy. Legacy-only notes remain available during the compatibility window.
 4. After client adoption is confirmed, set `SECRETNOTEZ_V1_MODE=disabled` and restart the backend. Legacy routes then return HTTP 426.
 
 The temporary v1 compatibility window closes automatically at `2026-12-31T23:59:59Z`. Override it with the RFC3339 environment variable `SECRETNOTEZ_V1_DEADLINE` only to shorten the transition. Legacy recovery closes at `2027-03-31T23:59:59Z`; `SECRETNOTEZ_RECOVERY_DEADLINE` can shorten that window. Recovery exposes a deterministic legacy lookup oracle, so it must not remain enabled indefinitely.
+
+To update a locally installed CLI from this checkout, run `go install ./cli/cmd/sn`. Existing binaries do not update automatically.
 
 ## 🔐 How Secure Is Your Data?
 

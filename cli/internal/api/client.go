@@ -8,13 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/ktappdev/secretnotes-go-backend/cli/internal/e2ee"
+	"github.com/ktappdev/secretnotes-go-backend/internal/e2ee"
 )
 
 var (
@@ -22,11 +21,7 @@ var (
 	ErrNoteAlreadyExists = errors.New("encrypted note already exists")
 )
 
-const (
-	notePurpose     = "secretnotez:v2:note"
-	imagePurpose    = "secretnotez:v2:image"
-	metadataPurpose = "secretnotez:v2:image-metadata"
-)
+const notePurpose = "secretnotez:v2:note"
 
 type Client struct {
 	BaseURL    string
@@ -53,17 +48,6 @@ type encryptedNote struct {
 	Version    int    `json:"version"`
 	Created    string `json:"created"`
 	Updated    string `json:"updated"`
-}
-
-type legacyNote struct {
-	Ciphertext string `json:"ciphertext"`
-	HasImage   bool   `json:"hasImage"`
-}
-
-type imageMetadata struct {
-	FileName    string `json:"fileName"`
-	FileSize    int    `json:"fileSize"`
-	ContentType string `json:"contentType"`
 }
 
 func NewClient(baseURL string, verifyTLS bool) *Client {
@@ -146,77 +130,6 @@ func (c *Client) UpdateNote(ctx context.Context, passphrase []byte, message stri
 		return nil, err
 	}
 	return decryptNote(encrypted, keys)
-}
-
-func (c *Client) RecoverNote(ctx context.Context, passphrase []byte) (*Note, error) {
-	keys, err := c.sessionKeys(passphrase)
-	if err != nil {
-		return nil, err
-	}
-	defer keys.Clear()
-	hash := e2ee.LegacyLookupHash(passphrase)
-	legacy, err := c.getLegacyNote(ctx, hash)
-	if err != nil {
-		return nil, err
-	}
-	message, err := e2ee.DecryptLegacyBase64(legacy.Ciphertext, passphrase)
-	if err != nil {
-		return nil, err
-	}
-	ciphertext, err := e2ee.Encrypt(message, keys.Note, notePurpose)
-	if err != nil {
-		return nil, err
-	}
-
-	var image []byte
-	var metadata string
-	if legacy.HasImage {
-		legacyImage, filenameCiphertext, contentType, imageErr := c.getLegacyImage(ctx, hash)
-		if imageErr != nil {
-			return nil, imageErr
-		}
-		plaintextImage, imageErr := e2ee.DecryptLegacy(legacyImage, passphrase)
-		if imageErr != nil {
-			return nil, imageErr
-		}
-		filename, imageErr := e2ee.DecryptLegacyBase64(filenameCiphertext, passphrase)
-		if imageErr != nil {
-			return nil, imageErr
-		}
-		imageEnvelope, imageErr := e2ee.Encrypt(plaintextImage, keys.Image, imagePurpose)
-		if imageErr != nil {
-			return nil, imageErr
-		}
-		image = []byte(imageEnvelope)
-		metadataValue, _ := json.Marshal(imageMetadata{
-			FileName: string(filename), FileSize: len(plaintextImage), ContentType: contentType,
-		})
-		metadata, imageErr = e2ee.Encrypt(metadataValue, keys.ImageMetadata, metadataPurpose)
-		if imageErr != nil {
-			return nil, imageErr
-		}
-	}
-	imported, err := c.importNote(ctx, keys, ciphertext, image, metadata)
-	if err != nil && !errors.Is(err, ErrNoteAlreadyExists) {
-		return nil, err
-	}
-	verified, err := c.getEncryptedNote(ctx, keys)
-	if err != nil {
-		return nil, err
-	}
-	note, err := decryptNote(verified, keys)
-	if err != nil {
-		return nil, err
-	}
-	if (imported != nil && note.ID != imported.ID) || note.Message != string(message) || note.HasImage != legacy.HasImage {
-		return nil, errors.New("recovered note verification failed")
-	}
-	if legacy.HasImage {
-		if err := c.verifyImage(ctx, keys); err != nil {
-			return nil, err
-		}
-	}
-	return note, nil
 }
 
 func (c *Client) sessionKeys(passphrase []byte) (*e2ee.Keys, error) {
@@ -322,115 +235,6 @@ func (c *Client) postEncryptedNote(ctx context.Context, keys *e2ee.Keys, ciphert
 		return nil, responseError("create note", res)
 	}
 	return decodeEncryptedNote(res.Body)
-}
-
-func (c *Client) getLegacyNote(ctx context.Context, hash string) (*legacyNote, error) {
-	req, err := c.request(ctx, http.MethodGet, "/api/secretnotes/v2/recovery", nil, "")
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("X-Legacy-Lookup-Hash", hash)
-	res, err := c.hc.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode == http.StatusNotFound {
-		return nil, ErrNoteNotFound
-	}
-	if res.StatusCode != http.StatusOK {
-		return nil, responseError("recover note", res)
-	}
-	var result legacyNote
-	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-func (c *Client) getLegacyImage(ctx context.Context, hash string) ([]byte, string, string, error) {
-	req, err := c.request(ctx, http.MethodGet, "/api/secretnotes/v2/recovery/image", nil, "")
-	if err != nil {
-		return nil, "", "", err
-	}
-	req.Header.Set("X-Legacy-Lookup-Hash", hash)
-	res, err := c.hc.Do(req)
-	if err != nil {
-		return nil, "", "", err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return nil, "", "", responseError("recover image", res)
-	}
-	value, err := io.ReadAll(io.LimitReader(res.Body, 15<<20+1))
-	if err != nil || len(value) > 15<<20 {
-		return nil, "", "", errors.New("legacy image exceeds limit")
-	}
-	return value, res.Header.Get("X-Encrypted-Metadata"), res.Header.Get("X-Legacy-Content-Type"), nil
-}
-
-func (c *Client) importNote(ctx context.Context, keys *e2ee.Keys, ciphertext string, image []byte, metadata string) (*encryptedNote, error) {
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	if err := writer.WriteField("ciphertext", ciphertext); err != nil {
-		return nil, err
-	}
-	if len(image) > 0 {
-		part, err := writer.CreateFormFile("image", "image.bin")
-		if err != nil {
-			return nil, err
-		}
-		if _, err := part.Write(image); err != nil {
-			return nil, err
-		}
-		if err := writer.WriteField("image_metadata", metadata); err != nil {
-			return nil, err
-		}
-	}
-	if err := writer.Close(); err != nil {
-		return nil, err
-	}
-	req, err := c.request(ctx, http.MethodPost, "/api/secretnotes/v2/import", &body, keys.LookupHeader())
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	res, err := c.hc.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode == http.StatusConflict {
-		return nil, ErrNoteAlreadyExists
-	}
-	if res.StatusCode != http.StatusCreated {
-		return nil, responseError("import note", res)
-	}
-	return decodeEncryptedNote(res.Body)
-}
-
-func (c *Client) verifyImage(ctx context.Context, keys *e2ee.Keys) error {
-	req, err := c.request(ctx, http.MethodGet, "/api/secretnotes/v2/notes/image", nil, keys.LookupHeader())
-	if err != nil {
-		return err
-	}
-	res, err := c.hc.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return responseError("verify image", res)
-	}
-	encrypted, err := io.ReadAll(io.LimitReader(res.Body, 15<<20+1))
-	if err != nil || len(encrypted) > 15<<20 {
-		return errors.New("encrypted image exceeds limit")
-	}
-	if _, err := e2ee.Decrypt(string(encrypted), keys.Image, imagePurpose); err != nil {
-		return err
-	}
-	_, err = e2ee.Decrypt(res.Header.Get("X-Encrypted-Metadata"), keys.ImageMetadata, metadataPurpose)
-	return err
 }
 
 func (c *Client) request(ctx context.Context, method, path string, body io.Reader, token string) (*http.Request, error) {

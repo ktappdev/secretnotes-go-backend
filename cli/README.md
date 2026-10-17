@@ -6,7 +6,7 @@ Concept
 
 - One passphrase → one note. Change the passphrase and you see a different note.
 - No list, no accounts. Just load, edit, and save your note.
-- Image editing is intentionally omitted, but recovery preserves existing images.
+- Image editing is intentionally omitted. Existing v2 images are left unchanged when saving text.
 
 Keybindings
 
@@ -23,8 +23,7 @@ Features
 - First-run setup storing non-sensitive config in the user config directory
 - Passphrase prompt at start (never stored); in-app passphrase change (Ctrl+P)
 - Encrypt and decrypt note text locally with the shared v2 protocol
-- Explicitly create a new note or recover a legacy note when no v2 note exists
-- Preserve legacy images during recovery without exposing them in the text UI
+- Explicitly create a new note when no v2 note exists
 - Autosave ON by default (1200ms debounce), toggleable in-app and persisted
 - Plain view toggle for clean selection/copy (Ctrl+T)
 - One-shot copy to clipboard (Ctrl+Y)
@@ -113,7 +112,7 @@ Security
 - Passphrase lives only in memory for the session and is zeroed on exit.
 - Notes are encrypted and decrypted locally; the server receives only a lookup token and ciphertext.
 - No passphrases, plaintext notes, filenames, or encryption keys are sent to the server or written to config.
-- Existing server-encrypted notes can be recovered explicitly and imported into v2 without sending the passphrase.
+- The CLI supports v2 notes only. Legacy notes must be migrated with another supported client.
 - No recovery: If you forget your passphrase, your note is permanently unrecoverable.
 
 Privacy & exit behavior

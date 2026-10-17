@@ -129,6 +129,7 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				a.pass = []byte(val)
 				a.loaded = false
+				a.initialErr = nil
 				a.missing = false
 				a.version = 0
 				a.session++
@@ -154,11 +155,6 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.missing {
 				a.status = "Creating encrypted note..."
 				return a, a.createNoteCmd()
-			}
-		case "r":
-			if a.missing {
-				a.status = "Recovering existing note locally..."
-				return a, a.recoverNoteCmd()
 			}
 		case "?":
 			a.showAbout = !a.showAbout
@@ -213,14 +209,14 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.missing = true
 				a.connected = true
 				a.loaded = false
-				a.status = "Choose: c create new • r recover existing"
+				a.status = "Press c to create a new encrypted note"
 				a.ta.Blur()
 				return a, nil
 			}
 			a.initialErr = m.err
 			a.connected = false
 			a.ta.Placeholder = "Failed to load note (press Ctrl+Q to quit)"
-			a.status = "Offline"
+			a.status = fmt.Sprintf("Load failed: %v", m.err)
 			return a, nil
 		}
 		a.loaded = true
@@ -240,7 +236,7 @@ func (a *EditorApp) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.saving = false
 		if m.err != nil {
 			a.connected = false
-			a.status = "Offline (save failed)"
+			a.status = fmt.Sprintf("Save failed: %v", m.err)
 		} else {
 			a.connected = true
 			a.version = m.note.Version
@@ -281,11 +277,14 @@ func (a *EditorApp) View() string {
 	}
 	if a.missing {
 		title := lipgloss.NewStyle().Bold(true).Render("No end-to-end encrypted note found")
-		body := "Press c to create a blank note.\nPress r to recover an existing note without sending your passphrase."
+		body := "Press c to create a blank note."
 		return lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).Padding(1, 2).Render(title + "\n\n" + body)
 	}
 	border := lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).Padding(0, 1)
 	conn := "Offline"
+	if !a.loaded && a.initialErr == nil {
+		conn = "Loading"
+	}
 	if a.connected {
 		conn = "Connected"
 	}
@@ -379,18 +378,6 @@ func (a *EditorApp) createNoteCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		note, err := a.client.CreateNote(ctx, passphrase)
-		return loadedMsg{note: note, err: err, session: session}
-	}
-}
-
-func (a *EditorApp) recoverNoteCmd() tea.Cmd {
-	passphrase := bytes.Clone(a.pass)
-	session := a.session
-	return func() tea.Msg {
-		defer zero(passphrase)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		note, err := a.client.RecoverNote(ctx, passphrase)
 		return loadedMsg{note: note, err: err, session: session}
 	}
 }

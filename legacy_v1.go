@@ -21,9 +21,9 @@ func registerLegacyV1Routes(
 ) {
 	limiter := newFixedWindowLimiter(120, time.Minute)
 	api.GET("/notes", legacyV1Route(limiter, func(e *core.RequestEvent) error {
-		phrase, err := extractPassphrase(e, "")
+		phrase, err := legacyV1Passphrase(e, "")
 		if err != nil {
-			return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return err
 		}
 		return handleGetOrCreateNote(e, phrase, noteService)
 	}))
@@ -33,9 +33,9 @@ func registerLegacyV1Routes(
 			Passphrase string `json:"passphrase"`
 		}{}
 		_ = e.BindBody(&data)
-		phrase, err := extractPassphrase(e, data.Passphrase)
+		phrase, err := legacyV1Passphrase(e, data.Passphrase)
 		if err != nil {
-			return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return err
 		}
 		return handleGetOrCreateNote(e, phrase, noteService)
 	}))
@@ -49,9 +49,9 @@ func registerLegacyV1Routes(
 		if err := e.BindBody(&data); err != nil {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		}
-		phrase, err := extractPassphrase(e, data.Passphrase)
+		phrase, err := legacyV1Passphrase(e, data.Passphrase)
 		if err != nil {
-			return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return err
 		}
 		return handleUpsertNoteWithMessage(e, phrase, data.Message, data.Version, noteService)
 	}))
@@ -65,9 +65,9 @@ func registerLegacyV1Routes(
 		if err := e.BindBody(&data); err != nil {
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		}
-		phrase, err := extractPassphrase(e, data.Passphrase)
+		phrase, err := legacyV1Passphrase(e, data.Passphrase)
 		if err != nil {
-			return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return err
 		}
 		note, err := noteService.UpdateNote(phrase, data.Message, data.Version)
 		if err != nil {
@@ -85,23 +85,23 @@ func registerLegacyV1Routes(
 	}))
 
 	api.POST("/notes/image", legacyV1Route(limiter, func(e *core.RequestEvent) error {
-		phrase, err := extractPassphrase(e, "")
+		phrase, err := legacyV1Passphrase(e, "")
 		if err != nil {
-			return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return err
 		}
 		return handleUploadImage(e, phrase, noteService, fileService)
 	}))
 	api.GET("/notes/image", legacyV1Route(limiter, func(e *core.RequestEvent) error {
-		phrase, err := extractPassphrase(e, "")
+		phrase, err := legacyV1Passphrase(e, "")
 		if err != nil {
-			return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return err
 		}
 		return handleGetImage(e, phrase, fileService)
 	}))
 	api.DELETE("/notes/image", legacyV1Route(limiter, func(e *core.RequestEvent) error {
-		phrase, err := extractPassphrase(e, "")
+		phrase, err := legacyV1Passphrase(e, "")
 		if err != nil {
-			return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return err
 		}
 		return handleDeleteImage(e, phrase, noteService, fileService)
 	}))
@@ -116,6 +116,8 @@ func legacyV1Route(limiter *fixedWindowLimiter, next func(*core.RequestEvent) er
 		if !limiter.allow(e.RealIP()) {
 			return rateLimited(e)
 		}
+		legacyTransitionMu.RLock()
+		defer legacyTransitionMu.RUnlock()
 		return next(e)
 	}
 }

@@ -15,7 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ktappdev/secretnotes-go-backend/internal/e2ee"
 	"github.com/ktappdev/secretnotes-go-backend/services"
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -272,6 +274,55 @@ func TestLegacyV1CompatibilityHTTPRoute(t *testing.T) {
 	mux.ServeHTTP(response, request)
 	if response.Code != http.StatusUpgradeRequired {
 		t.Fatalf("disabled legacy route status %d: %s", response.Code, response.Body.String())
+	}
+
+	// A v2 note for the same passphrase must stop all access to the stale copy.
+	t.Setenv("SECRETNOTEZ_V1_MODE", "compat")
+	keys, err := e2ee.DeriveKeys([]byte("compatibility-test-note"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer keys.Clear()
+	collection, err := app.FindCollectionByNameOrId(v2Collection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := core.NewRecord(collection)
+	record.Set("lookup_hash", sha256Hex(keys.LookupToken))
+	record.Set("ciphertext", `{"v":2,"n":"AAAAAAAAAAAAAAAA","c":"AAAAAAAAAAAAAAAAAAAAAA"}`)
+	record.Set("version", 1)
+	if err := app.Save(record); err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range []struct{ method, path string }{
+		{http.MethodGet, "/notes"},
+		{http.MethodPost, "/notes"},
+		{http.MethodPut, "/notes"},
+		{http.MethodPatch, "/notes"},
+		{http.MethodGet, "/notes/image"},
+		{http.MethodPost, "/notes/image"},
+		{http.MethodDelete, "/notes/image"},
+	} {
+		request := httptest.NewRequest(route.method, "/api/secretnotes"+route.path,
+			strings.NewReader(`{"passphrase":"compatibility-test-note","message":"stale edit","version":1}`))
+		request.Header.Set("Content-Type", "application/json")
+		// Exercise JSON passphrase fallback as well as header-based clients.
+		if route.method == http.MethodGet || strings.HasSuffix(route.path, "/image") {
+			request.Header.Set("X-Passphrase", "compatibility-test-note")
+		}
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, request)
+		if response.Code != http.StatusUpgradeRequired || !strings.Contains(response.Body.String(), "note_requires_v2") {
+			t.Fatalf("migrated legacy %s %s status %d: %s", route.method, route.path, response.Code, response.Body.String())
+		}
+	}
+	legacy, err := app.FindFirstRecordByFilter("notes", "phrase_hash = {:hash}",
+		dbx.Params{"hash": hashPhrase("compatibility-test-note")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.GetInt("version") != 1 {
+		t.Fatal("rejected legacy requests changed the old note")
 	}
 }
 

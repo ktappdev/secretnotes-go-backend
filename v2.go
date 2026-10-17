@@ -140,6 +140,9 @@ func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app core.App)
 			return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid encrypted note"})
 		}
 
+		legacyTransitionMu.Lock()
+		defer legacyTransitionMu.Unlock()
+
 		var saved *core.Record
 		err = e.App.RunInTransaction(func(txApp core.App) error {
 			existing, findErr := findV2Note(txApp, lookupHash)
@@ -251,6 +254,9 @@ func registerV2Routes(api *router.RouterGroup[*core.RequestEvent], app core.App)
 		if imageFile != nil {
 			defer imageFile.Close()
 		}
+
+		legacyTransitionMu.Lock()
+		defer legacyTransitionMu.Unlock()
 
 		var saved *core.Record
 		err = e.App.RunInTransaction(func(txApp core.App) error {
