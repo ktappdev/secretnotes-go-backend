@@ -59,6 +59,10 @@ type EditorApp struct {
 
 func NewEditorApp(client *api.Client, passphrase []byte, serverName string, autosave bool, debounce time.Duration, savePref func(bool, int) error) *EditorApp {
 	ta := textarea.New()
+	// Unlimited: bubbles defaults CharLimit to 400 runes, which silently
+	// truncated loaded notes (and autosave could persist the cut text).
+	// The server-side ciphertext cap is the real note-size limit.
+	ta.CharLimit = 0
 	ta.Placeholder = "Loading note..."
 	ta.Focus()
 	// reasonable sizes; Bubble Tea will reflow in terminal
